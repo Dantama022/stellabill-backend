@@ -32,6 +32,7 @@ This service is the **backend only**. A separate frontend (or any client) can:
 - **Health check** — `GET /api/health` to verify the API is up.
 - **Plans** — `GET /api/plans` to list billing plans (id, name, amount, currency, interval, description). Currently returns an empty list; DB integration is planned.
 - **Subscriptions** — `GET /api/subscriptions` to list subscriptions and `GET /api/subscriptions/:id` to fetch one. Responses include plan_id, customer, status, amount, interval, next_billing. Currently placeholder/mock data; DB integration is planned.
+- **Input sanitization** — path and query parameters are trimmed, normalized with Unicode NFKC, constrained to safe allow-lists, and rejected with `400` JSON errors when malformed.
 
 CORS is enabled for all origins in development so a frontend on another port or domain can call these endpoints.
 
@@ -118,6 +119,26 @@ Base URL (local): `http://localhost:8080`
 | GET    | `/api/subscriptions/:id` | Get one subscription     |
 
 All JSON responses. CORS allowed for `*` origin with common methods and headers.
+
+### Parameter validation
+
+- `GET /api/plans` accepts optional `currency`, `interval`, `search`, `page`, and `limit` query parameters.
+- `GET /api/subscriptions` accepts optional `customer`, `plan_id`, `status`, `page`, and `limit` query parameters.
+- `GET /api/subscriptions/:id` accepts only the path parameter and rejects unexpected query parameters.
+- Identifier-style parameters allow only letters, numbers, `.`, `_`, and `-` after normalization.
+- `search` allows letters, numbers, spaces, `.`, `_`, and `-`.
+- Numeric parameters must be base-10 integers within bounded ranges: `page` 1-100000 and `limit` 1-100.
+- Validation failures return `400` with an `error` field, for example:
+
+```json
+{"error":"invalid query parameter \"limit\": must be between 1 and 100"}
+```
+
+### Security notes
+
+- NFKC normalization collapses confusable Unicode forms before validation, which reduces parser inconsistencies and bypass attempts using full-width characters.
+- Encoded payloads are validated after decoding, so values such as `%3Cscript%3E` are rejected instead of passing through alternate parser paths.
+- Duplicate query parameters are rejected to avoid ambiguous interpretation across middleware, frameworks, and future database layers.
 
 ---
 
