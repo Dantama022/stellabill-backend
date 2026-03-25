@@ -25,6 +25,18 @@ func ListSubscriptions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"subscriptions": subscriptions})
 }
 
+func GetSubscription(c *gin.Context) {
+	id := c.Param("id")
+	c.JSON(http.StatusOK, Subscription{
+		ID:       id,
+		PlanID:   "plan_placeholder",
+		Customer: "customer_placeholder",
+		Status:   "placeholder",
+		Amount:   "0",
+		Interval: "monthly",
+	})
+}
+
 // NewGetSubscriptionHandler returns a gin.HandlerFunc that retrieves a full
 // subscription detail using the provided SubscriptionService.
 func NewGetSubscriptionHandler(svc service.SubscriptionService) gin.HandlerFunc {
