@@ -8,19 +8,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestNewRouterRegistersRoutes(t *testing.T) {
+func TestNewRouterRegistersMiddlewareAndRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	router, err := newRouter()
-	if err != nil {
-		t.Fatalf("new router: %v", err)
-	}
-
+	router := newRouter()
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	res := httptest.NewRecorder()
+
 	router.ServeHTTP(res, req)
 
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", res.Code)
+	}
+	if res.Header().Get("X-Request-ID") == "" {
+		t.Fatal("expected request id header")
+	}
+	if res.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatal("expected CORS header")
 	}
 }

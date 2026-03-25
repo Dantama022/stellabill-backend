@@ -7,84 +7,76 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"stellarbill-backend/internal/handlers"
-	"stellarbill-backend/internal/services"
 )
 
-func TestRegisterValidatesDependencies(t *testing.T) {
-	t.Parallel()
+func TestRegister_HealthAndCORS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	Register(engine)
 
-	handler, err := handlers.New(handlers.Dependencies{
-		HealthService:       services.NewStaticHealthService("test-service"),
-		PlanService:         services.NewStaticPlanService(nil),
-		SubscriptionService: services.NewPlaceholderSubscriptionService(),
-	})
-	if err != nil {
-		t.Fatalf("new handler: %v", err)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/api/health", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("Access-Control-Allow-Origin: got %q want %q", got, "*")
 	}
 
-	cases := []struct {
-		name string
-		r    *gin.Engine
-		deps Dependencies
-		want string
-	}{
-		{
-			name: "missing router",
-			deps: Dependencies{Handler: handler},
-			want: "router is required",
-		},
-		{
-			name: "missing handler",
-			r:    gin.New(),
-			want: "handler is required",
-		},
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode json: %v", err)
 	}
-
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			if err := Register(tc.r, tc.deps); err == nil || err.Error() != tc.want {
-				t.Fatalf("expected error %q, got %v", tc.want, err)
-			}
-		})
+	if payload["status"] != "ok" {
+		t.Fatalf("payload.status: got %v want %q", payload["status"], "ok")
+	}
+	if payload["service"] != "stellarbill-backend" {
+		t.Fatalf("payload.service: got %v want %q", payload["service"], "stellarbill-backend")
 	}
 }
 
-func TestRegisterUsesInjectedHandlers(t *testing.T) {
+func TestRegister_CORSPreflight(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	Register(engine)
 
-	handler, err := handlers.New(handlers.Dependencies{
-		HealthService: services.NewStaticHealthService("route-mock"),
-		PlanService: services.NewStaticPlanService([]services.Plan{
-			{ID: "starter", Name: "Starter", Amount: "0", Currency: "USD", Interval: "month"},
-		}),
-		SubscriptionService: services.NewPlaceholderSubscriptionService(),
-	})
-	if err != nil {
-		t.Fatalf("new handler: %v", err)
+	req := httptest.NewRequest(http.MethodOptions, "http://localhost:8080/api/health", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status: got %d want %d", rec.Code, http.StatusNoContent)
 	}
-
-	router := gin.New()
-	if err := Register(router, Dependencies{Handler: handler}); err != nil {
-		t.Fatalf("register: %v", err)
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); got == "" {
+		t.Fatalf("expected Access-Control-Allow-Methods to be set")
 	}
+}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/plans", nil)
-	res := httptest.NewRecorder()
-	router.ServeHTTP(res, req)
+func TestRegister_GetSubscriptionShape(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	Register(engine)
 
-	if res.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", res.Code)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/api/subscriptions/sub_123", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d want %d", rec.Code, http.StatusOK)
 	}
-
-	var body map[string][]services.Plan
-	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode body: %v", err)
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode json: %v", err)
 	}
-	if got := len(body["plans"]); got != 1 || body["plans"][0].ID != "starter" {
-		t.Fatalf("unexpected body: %+v", body)
+	if payload["id"] != "sub_123" {
+		t.Fatalf("payload.id: got %v want %q", payload["id"], "sub_123")
+	}
+	if _, ok := payload["plan_id"]; !ok {
+		t.Fatalf("expected payload.plan_id to be present")
+	}
+	if _, ok := payload["customer"]; !ok {
+		t.Fatalf("expected payload.customer to be present")
 	}
 }

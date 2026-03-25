@@ -1,36 +1,30 @@
 package handlers
 
 import (
-	"errors"
-
-	"stellarbill-backend/internal/services"
+	"github.com/gin-gonic/gin"
 )
 
-type Dependencies struct {
-	HealthService       services.HealthService
-	PlanService         services.PlanService
-	SubscriptionService services.SubscriptionService
+// PlanService defines the interface for plan-related operations
+type PlanService interface {
+	ListPlans(c *gin.Context) ([]Plan, error)
 }
 
+// SubscriptionService defines the interface for subscription-related operations
+type SubscriptionService interface {
+	ListSubscriptions(c *gin.Context) ([]Subscription, error)
+	GetSubscription(c *gin.Context, id string) (*Subscription, error)
+}
+
+// Handler holds the dependencies for the HTTP handlers
 type Handler struct {
-	healthService       services.HealthService
-	planService         services.PlanService
-	subscriptionService services.SubscriptionService
+	Plans         PlanService
+	Subscriptions SubscriptionService
 }
 
-func New(deps Dependencies) (*Handler, error) {
-	switch {
-	case deps.HealthService == nil:
-		return nil, errors.New("health service is required")
-	case deps.PlanService == nil:
-		return nil, errors.New("plan service is required")
-	case deps.SubscriptionService == nil:
-		return nil, errors.New("subscription service is required")
-	}
-
+// NewHandler creates a new Handler with the given dependencies
+func NewHandler(plans PlanService, subscriptions SubscriptionService) *Handler {
 	return &Handler{
-		healthService:       deps.HealthService,
-		planService:         deps.PlanService,
-		subscriptionService: deps.SubscriptionService,
-	}, nil
+		Plans:         plans,
+		Subscriptions: subscriptions,
+	}
 }
