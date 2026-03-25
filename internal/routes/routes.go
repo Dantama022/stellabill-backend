@@ -21,6 +21,8 @@ func Register(r *gin.Engine) {
 	subRepo := repository.NewMockSubscriptionRepo()
 	planRepo := repository.NewMockPlanRepo()
 	svc := service.NewSubscriptionService(subRepo, planRepo)
+	// wire planRepo into handlers for list/detail endpoints and optional caching
+	handlers.SetPlanRepository(planRepo)
 
 	api := r.Group("/api")
 	{
