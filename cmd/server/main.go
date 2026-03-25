@@ -1,8 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"stellarbill-backend/internal/audit"
@@ -11,42 +14,76 @@ import (
 )
 
 func main() {
-	if err := mainWithRunner(nil); err != nil {
-		log.Fatal(err)
+	// Load configuration with strict validation
+	cfg, err := config.Load()
+	if err != nil {
+		// Fail fast with descriptive error
+		fmt.Fprintf(os.Stderr, "ERROR: Configuration validation failed: %s\n", err.Error())
+		fmt.Fprintln(os.Stderr, "\nRequired environment variables:")
+		for _, key := range config.GetRequiredEnvVars() {
+			fmt.Fprintf(os.Stderr, "  - %s\n", key)
+		}
+		fmt.Fprintln(os.Stderr, "\nOptional environment variables and defaults:")
+		for key, val := range config.GetOptionalEnvVars() {
+			fmt.Fprintf(os.Stderr, "  - %s (default: %s)\n", key, val)
+		}
+		os.Exit(1)
 	}
-}
 
-// mainWithRunner allows tests to inject a runner while covering the main entrypoint.
-func mainWithRunner(runner func(*gin.Engine, string) error) error {
-	cfg := config.Load()
-	if runner == nil {
-		runner = func(r *gin.Engine, addr string) error { return r.Run(addr) }
+	// Log warnings if any
+	if vResult := cfg.Validate(); len(vResult.Warnings) > 0 {
+		log.Printf("WARNING: Configuration warnings:")
+		for _, w := range vResult.Warnings {
+			log.Printf("  - %s", w)
+		}
 	}
-	if os.Getenv("SKIP_SERVER_RUN") == "1" {
-		runner = func(_ *gin.Engine, _ string) error { return nil }
-	}
-	return run(cfg, runner)
-}
 
-// buildRouter is split from main to make testing and audit wiring easier.
-func buildRouter(cfg config.Config) *gin.Engine {
+	// Set Gin mode based on environment
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
+		log.Println("Running in production mode")
+	} else if cfg.Env == "development" {
+		gin.SetMode(gin.DebugMode)
+		log.Println("Running in development mode")
+	} else {
+		gin.SetMode(gin.TestMode)
+		log.Printf("Running in %s mode", cfg.Env)
 	}
 
-	router := gin.Default()
-	auditLogger := audit.NewLogger(cfg.AuditSecret, audit.NewFileSink(cfg.AuditLogPath))
-	routes.Register(router, cfg, auditLogger)
-	return router
-}
+	// Create router with configured timeouts
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(gin.Logger())
 
-// run builds the router and delegates serving, allowing tests to stub the runner.
-func run(cfg config.Config, runner func(*gin.Engine, string) error) error {
-	router := buildRouter(cfg)
-	addr := ":" + cfg.Port
-	if p := os.Getenv("PORT"); p != "" {
-		addr = ":" + p
+	// Set timeouts from configuration
+	router.Use(func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("X-XSS-Protection", "1; mode=block")
+		c.Next()
+	})
+
+	// Register routes
+	routes.Register(router)
+
+	// Build server address
+	addr := fmt.Sprintf(":%d", cfg.Port)
+
+	// Create HTTP server with configuration
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      router,
+		ReadTimeout:  time.Duration(cfg.ReadTimeout) * time.Second,
+		WriteTimeout: time.Duration(cfg.WriteTimeout) * time.Second,
+		IdleTimeout:  time.Duration(cfg.IdleTimeout) * time.Second,
 	}
-	log.Printf("Stellarbill backend listening on %s", addr)
-	return runner(router, addr)
+
+	log.Printf("Starting Stellarbill backend on %s (env: %s)", addr, cfg.Env)
+	log.Printf("Server timeouts - Read: %ds, Write: %ds, Idle: %ds", 
+		cfg.ReadTimeout, cfg.WriteTimeout, cfg.IdleTimeout)
+
+	// Start server with fail-fast behavior
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }
