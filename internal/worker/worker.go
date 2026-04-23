@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"stellarbill-backend/internal/maintenance"
 	"stellarbill-backend/internal/security"
 )
 
@@ -137,6 +138,12 @@ func (w *Worker) schedulerLoop() {
 
 // pollAndDispatch fetches pending jobs and dispatches them for execution
 func (w *Worker) pollAndDispatch() {
+	if maintenance.IsActive() {
+		security.ProductionLogger().Info("Worker skipping poll cycle due to maintenance mode",
+			zap.String("worker_id", w.config.WorkerID))
+		return
+	}
+
 	w.metrics.mu.Lock()
 	w.metrics.LastPollTime = time.Now()
 	w.metrics.mu.Unlock()
