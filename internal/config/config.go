@@ -59,6 +59,10 @@ type Config struct {
 	// Tracing configuration
 	TracingExporter string
 	TracingServiceName string
+	// Request size limits
+	MaxRequestSize        int64
+	MaxGzipRatio         float64
+	MaxGzipUncompressed   int64
 }
 
 // ValidationResult holds the result of configuration validation
@@ -94,6 +98,9 @@ const (
 	DefaultReadTimeout  = 30      // seconds
 	DefaultWriteTimeout = 30      // seconds
 	DefaultIdleTimeout  = 120     // seconds
+	DefaultMaxRequestSize = 10 << 20 // 10MB
+	DefaultMaxGzipRatio   = 10.0
+	DefaultMaxGzipUncompressed = 100 << 20 // 100MB
 )
 
 // Required environment variables
@@ -112,6 +119,9 @@ var optionalEnvVars = map[string]string{
 	"IDLE_TIMEOUT":     "120",
 	"TRACING_EXPORTER": "stdout",
 	"TRACING_SERVICE_NAME": "stellabill-backend",
+	"MAX_REQUEST_SIZE":     "10485760",
+	"MAX_GZIP_RATIO":      "10.0",
+	"MAX_GZIP_UNCOMPRESSED": "104857600",
 }
 
 // Option configures the Load function.
@@ -157,6 +167,9 @@ func Load(opts ...Option) (Config, error) {
 		IdleTimeout:    DefaultIdleTimeout,
 		TracingExporter: getEnv("TRACING_EXPORTER", "stdout"),
 		TracingServiceName: getEnv("TRACING_SERVICE_NAME", "stellabill-backend"),
+		MaxRequestSize:      DefaultMaxRequestSize,
+		MaxGzipRatio:        DefaultMaxGzipRatio,
+		MaxGzipUncompressed: DefaultMaxGzipUncompressed,
 	}
 
 	// Resolve secrets through the provider
@@ -362,6 +375,33 @@ func (c *Config) validate(resolvedSecrets map[string]string, secretErrs map[stri
 
 	if svcName := os.Getenv("TRACING_SERVICE_NAME"); svcName != "" {
 		c.TracingServiceName = svcName
+	}
+
+	// Validate MAX_REQUEST_SIZE
+	if val := os.Getenv("MAX_REQUEST_SIZE"); val != "" {
+		if max, err := strconv.ParseInt(val, 10, 64); err == nil && max > 0 {
+			c.MaxRequestSize = max
+		} else {
+			result.Warnings = append(result.Warnings, "MAX_REQUEST_SIZE invalid, using default")
+		}
+	}
+
+	// Validate MAX_GZIP_RATIO
+	if val := os.Getenv("MAX_GZIP_RATIO"); val != "" {
+		if ratio, err := strconv.ParseFloat(val, 64); err == nil && ratio > 0 {
+			c.MaxGzipRatio = ratio
+		} else {
+			result.Warnings = append(result.Warnings, "MAX_GZIP_RATIO invalid, using default")
+		}
+	}
+
+	// Validate MAX_GZIP_UNCOMPRESSED
+	if val := os.Getenv("MAX_GZIP_UNCOMPRESSED"); val != "" {
+		if max, err := strconv.ParseInt(val, 10, 64); err == nil && max > 0 {
+			c.MaxGzipUncompressed = max
+		} else {
+			result.Warnings = append(result.Warnings, "MAX_GZIP_UNCOMPRESSED invalid, using default")
+		}
 	}
 
 	// Set optional env values
