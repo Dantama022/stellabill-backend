@@ -308,30 +308,20 @@ func (c *Config) validate(resolvedSecrets map[string]string, secretErrs map[stri
 		}
 	}
 
-	// Validate rate limiting configuration
-	if val := os.Getenv("RATE_LIMIT_ENABLED"); val != "" {
-		if enabled, err := strconv.ParseBool(val); err == nil {
-			c.RateLimitEnabled = enabled
-		} else {
-			result.Warnings = append(result.Warnings, "RATE_LIMIT_ENABLED invalid, using default")
-		}
-	}
+	// Validate rate limiting configuration with security-focused defaults
+	c.RateLimitEnabled = getEnvBool("RATE_LIMIT_ENABLED", true) // Enabled by default for security
+	c.RateLimitMode = getEnv("RATE_LIMIT_MODE", "ip")           // IP mode by default
 
-	if mode := os.Getenv("RATE_LIMIT_MODE"); mode != "" {
-		validModes := map[string]bool{"ip": true, "user": true, "hybrid": true}
-		if validModes[mode] {
-			c.RateLimitMode = mode
-		} else {
-			result.Warnings = append(result.Warnings, "RATE_LIMIT_MODE invalid, using default")
-		}
-	}
-
+	// Security-focused defaults: conservative limits by default
 	if val := os.Getenv("RATE_LIMIT_RPS"); val != "" {
 		if rps, err := strconv.Atoi(val); err == nil && rps > 0 && rps <= 1000 {
 			c.RateLimitRPS = rps
 		} else {
 			result.Warnings = append(result.Warnings, "RATE_LIMIT_RPS invalid, using default")
+			c.RateLimitRPS = 10 // Conservative default
 		}
+	} else {
+		c.RateLimitRPS = 10 // Conservative default for security
 	}
 
 	if val := os.Getenv("RATE_LIMIT_BURST"); val != "" {
@@ -339,7 +329,10 @@ func (c *Config) validate(resolvedSecrets map[string]string, secretErrs map[stri
 			c.RateLimitBurst = burst
 		} else {
 			result.Warnings = append(result.Warnings, "RATE_LIMIT_BURST invalid, using default")
+			c.RateLimitBurst = 20 // Conservative default (2x RPS)
 		}
+	} else {
+		c.RateLimitBurst = 20 // Conservative default (2x RPS)
 	}
 
 	if whitelist := os.Getenv("RATE_LIMIT_WHITELIST"); whitelist != "" {
@@ -348,6 +341,8 @@ func (c *Config) validate(resolvedSecrets map[string]string, secretErrs map[stri
 			paths[i] = strings.TrimSpace(path)
 		}
 		c.RateLimitWhitelist = paths
+	} else {
+		c.RateLimitWhitelist = []string{"/api/health"} // Only health check whitelisted by default
 	}
 
 	// Validate TRACING_EXPORTER
