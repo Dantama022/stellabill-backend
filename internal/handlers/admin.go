@@ -35,7 +35,7 @@ func (h *AdminHandler) PurgeCache(c *gin.Context) {
 			"attempt": attempt,
 			"reason":  "invalid_token",
 		})
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid admin token"})
+		RespondWithAuthError(c, "Invalid admin token")
 		return
 	}
 

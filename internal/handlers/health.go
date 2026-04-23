@@ -12,7 +12,7 @@ import (
 )
 
 func (h *Handler) Health(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
+	status := gin.H{
 		"status":  "ok",
 		"service": "stellarbill-backend",
 	}
@@ -39,17 +39,13 @@ func (h *Handler) Health(c *gin.Context) {
 // OutboxStats returns detailed outbox statistics
 func OutboxStats(c *gin.Context) {
 	if globalOutboxManager == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Outbox manager not available",
-		})
+		RespondWithError(c, http.StatusServiceUnavailable, ErrorCodeServiceUnavailable, "Outbox manager not available")
 		return
 	}
 
 	stats, err := globalOutboxManager.GetStats()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
+		RespondWithInternalError(c, "Failed to retrieve outbox statistics")
 		return
 	}
 
@@ -59,9 +55,7 @@ func OutboxStats(c *gin.Context) {
 // PublishTestEvent publishes a test event for development/testing
 func PublishTestEvent(c *gin.Context) {
 	if globalOutboxManager == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Outbox manager not available",
-		})
+		RespondWithError(c, http.StatusServiceUnavailable, ErrorCodeServiceUnavailable, "Outbox manager not available")
 		return
 	}
 
@@ -84,9 +78,7 @@ func PublishTestEvent(c *gin.Context) {
 	service := globalOutboxManager.GetService()
 	err := service.PublishEvent(c.Request.Context(), eventType, eventData, nil, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
+		RespondWithInternalError(c, "Failed to publish test event")
 		return
 	}
 
