@@ -162,3 +162,14 @@ func TestParse_TrimsWhitespace(t *testing.T) {
 	assert.Equal(t, "contract-trimmed", result.ContractID)
 	assert.Equal(t, "tenant-trimmed", result.TenantID)
 }
+
+func TestParse_NormalizesOccurredAtToUTC(t *testing.T) {
+	raw := validRawEvent()
+	raw.OccurredAt = "2026-04-23T10:30:00+02:00"
+
+	result, err := Parse(raw)
+	require.NoError(t, err)
+
+	assert.Equal(t, "2026-04-23T08:30:00Z", result.OccurredAt.Format(time.RFC3339))
+	assert.Equal(t, time.UTC, result.OccurredAt.Location())
+}

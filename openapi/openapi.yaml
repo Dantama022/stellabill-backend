@@ -143,7 +143,8 @@ components:
           example: monthly
         next_billing:
           type: string
-          description: Next billing datetime (string placeholder).
+          format: date-time
+          description: Next billing datetime in RFC3339 UTC format.
           example: "2026-04-01T00:00:00Z"
     SubscriptionsResponse:
       type: object

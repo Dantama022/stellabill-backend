@@ -353,3 +353,34 @@ func TestStatementListByCustomer_LargeSet(t *testing.T) {
 		t.Errorf("page size: got %d, want 10", len(detail.Statements))
 	}
 }
+
+func TestStatementGetDetail_NormalizesTimestampsToUTC(t *testing.T) {
+	row := &repository.StatementRow{
+		ID:             "stmt-utc",
+		SubscriptionID: "sub-utc",
+		CustomerID:     "cust-utc",
+		PeriodStart:    "2026-04-01T00:00:00+02:00",
+		PeriodEnd:      "2026-05-01T00:00:00+02:00",
+		IssuedAt:       "2026-05-02T11:15:00+01:00",
+		TotalAmount:    "2999",
+		Currency:       "USD",
+		Kind:           "invoice",
+		Status:         "paid",
+	}
+
+	svc := newStatementService(row)
+	detail, _, err := svc.GetDetail(context.Background(), "cust-utc", "stmt-utc")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if detail.PeriodStart != "2026-03-31T22:00:00Z" {
+		t.Fatalf("unexpected period_start: %s", detail.PeriodStart)
+	}
+	if detail.PeriodEnd != "2026-04-30T22:00:00Z" {
+		t.Fatalf("unexpected period_end: %s", detail.PeriodEnd)
+	}
+	if detail.IssuedAt != "2026-05-02T10:15:00Z" {
+		t.Fatalf("unexpected issued_at: %s", detail.IssuedAt)
+	}
+}
