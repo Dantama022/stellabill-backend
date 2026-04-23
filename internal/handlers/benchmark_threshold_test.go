@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"net/http/httptest"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func BenchmarkThresholdCheck_Plans_Small(b *testing.B) {
@@ -11,22 +14,12 @@ func BenchmarkThresholdCheck_Plans_Small(b *testing.B) {
 		c.JSON(200, gin.H{"plans": plans})
 	}
 
-	c, _ := setupBenchmarkContext()
-
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	var lastNs int64
-	var lastAllocs int64
-
 	for i := 0; i < b.N; i++ {
+		c, _ := setupBenchmarkContext()
 		handler(c)
-		lastNs = b.Elapsed().Nanoseconds() / int64(b.N)
-		lastAllocs = b.Elapsed().Nanoseconds() / int64(b.N)
-	}
-
-	if c, w, ok := c.(*gin.Context); ok {
-		_ = w
 	}
 }
 
@@ -94,12 +87,12 @@ func BenchmarkEnforceThreshold_Plans_Small(b *testing.B) {
 	handler := func(c *gin.Context) {
 		c.JSON(200, gin.H{"plans": plans})
 	}
-	c, _ := setupBenchmarkContext()
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
+		c, _ := setupBenchmarkContext()
 		handler(c)
 	}
 
@@ -115,12 +108,12 @@ func BenchmarkEnforceThreshold_Plans_Medium(b *testing.B) {
 	handler := func(c *gin.Context) {
 		c.JSON(200, gin.H{"plans": plans})
 	}
-	c, _ := setupBenchmarkContext()
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
+		c, _ := setupBenchmarkContext()
 		handler(c)
 	}
 
@@ -136,12 +129,12 @@ func BenchmarkEnforceThreshold_Subscriptions_Small(b *testing.B) {
 	handler := func(c *gin.Context) {
 		c.JSON(200, gin.H{"subscriptions": subscriptions})
 	}
-	c, _ := setupBenchmarkContext()
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
+		c, _ := setupBenchmarkContext()
 		handler(c)
 	}
 
@@ -157,12 +150,12 @@ func BenchmarkEnforceThreshold_Subscriptions_Medium(b *testing.B) {
 	handler := func(c *gin.Context) {
 		c.JSON(200, gin.H{"subscriptions": subscriptions})
 	}
-	c, _ := setupBenchmarkContext()
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
+		c, _ := setupBenchmarkContext()
 		handler(c)
 	}
 
