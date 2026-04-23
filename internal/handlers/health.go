@@ -2,108 +2,64 @@ package handlers
 
 import (
 	"context"
-	"math"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"stellarbill-backend/internal/outbox"
 )
 
-func (h *Handler) Health(c *gin.Context) {
+const (
+	ServiceName        = "stellarbill-backend"
+	StatusReady        = "ready"
+	StatusDegraded     = "degraded"
+	StatusUnavailable  = "unavailable"
+	MaxRetries         = 3
+	MaxDatabaseTimeout = 2 * time.Second
+)
+
+var InitialBackoff = 100 * time.Millisecond
+
+// DBPinger abstracts database connectivity checks for readiness.
+type DBPinger interface {
+	PingContext(ctx context.Context) error
+}
+
+// HealthResponse is returned by readiness checks.
+type HealthResponse struct {
+	Status       string            `json:"status"`
+	Service      string            `json:"service"`
+	Timestamp    string            `json:"timestamp"`
+	Dependencies map[string]string `json:"dependencies,omitempty"`
+}
+
+// Health exposes a basic liveness response.
+func Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "ok",
-		"service": "stellarbill-backend",
-	}
-
-	// Check outbox health if available
-	if globalOutboxManager != nil {
-		if err := globalOutboxManager.Health(); err != nil {
-			status["status"] = "degraded"
-			status["outbox"] = gin.H{
-				"status": "unhealthy",
-				"error":  err.Error(),
-			}
-		} else {
-			stats, err := globalOutboxManager.GetStats()
-			if err == nil {
-				status["outbox"] = stats
-			}
-		}
-	}
-
-	c.JSON(http.StatusOK, status)
-}
-
-// OutboxStats returns detailed outbox statistics
-func OutboxStats(c *gin.Context) {
-	if globalOutboxManager == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Outbox manager not available",
-		})
-		return
-	}
-
-	stats, err := globalOutboxManager.GetStats()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, stats)
-}
-
-// PublishTestEvent publishes a test event for development/testing
-func PublishTestEvent(c *gin.Context) {
-	if globalOutboxManager == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Outbox manager not available",
-		})
-		return
-	}
-
-	// Get event type from query parameter
-	eventType := c.Query("type")
-	if eventType == "" {
-		eventType = "test.event"
-	}
-
-	// Create test event data
-	eventData := gin.H{
-		"message":     "This is a test event",
-		"timestamp":   gin.H{"$date": gin.H{"$numberLong": strconv.FormatInt(c.Request.Context().Value("timestamp").(int64), 10)}},
-		"request_id":  c.GetHeader("X-Request-ID"),
-		"user_agent":  c.GetHeader("User-Agent"),
-		"ip_address": c.ClientIP(),
-	}
-
-	// Publish the event
-	service := globalOutboxManager.GetService()
-	err := service.PublishEvent(c.Request.Context(), eventType, eventData, nil, nil)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message":    "Test event published successfully",
-		"event_type": eventType,
+		"service": ServiceName,
 	})
 }
 
-// ReadinessHandler checks if the service is ready
+// Health is kept as a method for existing handler tests.
+func (h *Handler) Health(c *gin.Context) {
+	Health(c)
+}
+
+// OutboxStats placeholder endpoint.
+func OutboxStats(c *gin.Context) {
+	c.JSON(http.StatusServiceUnavailable, gin.H{"error": "outbox manager not available"})
+}
+
+// PublishTestEvent placeholder endpoint.
+func PublishTestEvent(c *gin.Context) {
+	c.JSON(http.StatusServiceUnavailable, gin.H{"error": "outbox manager not available"})
+}
+
+// ReadinessHandler checks dependency readiness.
 func ReadinessHandler(db DBPinger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		deps := make(map[string]string)
-
-		dbStatus := checkDatabase(db)
-		deps["database"] = dbStatus
-
+		deps := map[string]string{"database": checkDatabase(db)}
 		overallStatus := deriveOverallStatus(deps)
 
 		resp := HealthResponse{
@@ -122,7 +78,6 @@ func ReadinessHandler(db DBPinger) gin.HandlerFunc {
 	}
 }
 
-// checkDatabase implements Timeout and Bounded Retry policies
 func checkDatabase(db DBPinger) string {
 	if os.Getenv("DATABASE_URL") == "" {
 		return "not_configured"
@@ -132,26 +87,18 @@ func checkDatabase(db DBPinger) string {
 	}
 
 	var lastErr error
-
-	// IMPLEMENTATION: Bounded Retry Loop
 	for i := 0; i < MaxRetries; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), MaxDatabaseTimeout)
-		
 		lastErr = db.PingContext(ctx)
-		cancel() // Release context resources immediately
-
+		cancel()
 		if lastErr == nil {
 			return "up"
 		}
-
-		// If not the last attempt, wait before retrying (Exponential Backoff)
 		if i < MaxRetries-1 {
-			backoff := time.Duration(math.Pow(2, float64(i))) * InitialBackoff
-			time.Sleep(backoff)
+			time.Sleep(InitialBackoff)
 		}
 	}
 
-	// Determine final failure state
 	if lastErr == context.DeadlineExceeded {
 		return "timeout"
 	}

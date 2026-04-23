@@ -1,11 +1,9 @@
 package outbox
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
-	"time"
 )
 
 // HTTPPublisher publishes events via HTTP (placeholder implementation)
@@ -50,7 +48,7 @@ func (p *HTTPPublisher) Publish(event *Event) error {
 		"data":          eventData.Data,
 		"occurred_at":   event.OccurredAt,
 		"aggregate_id":  event.AggregateID,
-		""aggregate_type": event.AggregateType,
+		"aggregate_type": event.AggregateType,
 		"version":       event.Version,
 	}
 

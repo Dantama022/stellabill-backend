@@ -15,6 +15,7 @@ func TestRegister_HealthAndCORS(t *testing.T) {
 	Register(engine)
 
 	req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/api/health", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
@@ -43,6 +44,8 @@ func TestRegister_CORSPreflight(t *testing.T) {
 	Register(engine)
 
 	req := httptest.NewRequest(http.MethodOptions, "http://localhost:8080/api/health", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 

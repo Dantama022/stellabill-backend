@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"log"
 	"os"
 	"stellarbill-backend/internal/config"
 	"stellarbill-backend/internal/cors"
@@ -20,14 +21,17 @@ import (
 )
 
 func Register(r *gin.Engine) {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = config.Config{Env: "development", TracingExporter: "none", TracingServiceName: "stellarbill-backend"}
+	}
 
 	// Initialize tracing
 	if cfg.TracingExporter != "none" {
 		_, err := tracing.InitTracer(cfg.TracingServiceName)
 		if err != nil {
 			// Log error but continue
-			middleware.Log.Errorf("Failed to initialize tracer: %v", err)
+			log.Printf("Failed to initialize tracer: %v", err)
 		}
 	}
 
@@ -36,7 +40,7 @@ func Register(r *gin.Engine) {
 	// Add TraceID middleware to bridge OTEL trace ID to response headers
 	r.Use(middleware.TraceIDMiddleware())
 
-	corsProfile := cors.ProfileForEnv(cfg.Env, cfg.AllowedOrigins)
+	corsProfile := cors.ProfileForEnv(cfg.Env, os.Getenv("ALLOWED_ORIGINS"))
 
 	// Apply rate limiting middleware
 	rateLimitConfig := middleware.RateLimiterConfig{

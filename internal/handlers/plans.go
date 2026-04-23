@@ -1,31 +1,21 @@
 package handlers
 
 import (
-	"context"
 	"net/http"
-	"strconv"
-
-	"stellarbill-backend/internal/pagination"
 
 	"github.com/gin-gonic/gin"
 	"stellarbill-backend/internal/repository"
 )
 
-func (h *Handler) ListPlans(c *gin.Context) {
-	ctx := context.Background()
-	if c.Request != nil {
-		ctx = c.Request.Context()
-	}
-
-	plans, err := h.planService.ListPlans(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load plans"})
-		return
-	}
-
-	if plans == nil {
-		plans = []services.Plan{}
-	}
+// Plan is the plans payload shape exposed by handlers.
+type Plan struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Amount      string `json:"amount"`
+	Currency    string `json:"currency"`
+	Interval    string `json:"interval"`
+	Description string `json:"description,omitempty"`
+}
 
 var planRepo repository.PlanRepository
 
@@ -34,9 +24,21 @@ func SetPlanRepository(r repository.PlanRepository) {
 	planRepo = r
 }
 
+// ListPlans handles requests through the Handler dependency interface.
+func (h *Handler) ListPlans(c *gin.Context) {
+	plans, err := h.Plans.ListPlans(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if plans == nil {
+		plans = []Plan{}
+	}
+	c.JSON(http.StatusOK, gin.H{"plans": plans})
+}
+
+// ListPlans handles global route registration by using the configured repository.
 func ListPlans(c *gin.Context) {
-	// 1. Require planRepo to be set by routes.Register in normal runs. If nil,
-	// respond with empty list for backwards compatibility with tests.
 	if planRepo == nil {
 		c.JSON(http.StatusOK, gin.H{"plans": []Plan{}})
 		return
@@ -47,6 +49,7 @@ func ListPlans(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
+
 	out := make([]Plan, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, Plan{

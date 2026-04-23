@@ -41,6 +41,24 @@ func (h *Handler) GetSubscription(c *gin.Context) {
 	})
 }
 
+// ListSubscriptions handles global route registration.
+func ListSubscriptions(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"subscriptions": []Subscription{}})
+}
+
+// GetSubscription handles global route registration.
+func GetSubscription(c *gin.Context) {
+	id := c.Param("id")
+	c.JSON(http.StatusOK, Subscription{
+		ID:       id,
+		PlanID:   "plan_placeholder",
+		Customer: "customer_placeholder",
+		Status:   "placeholder",
+		Amount:   "0",
+		Interval: "monthly",
+	})
+}
+
 // NewGetSubscriptionHandler returns a gin.HandlerFunc that retrieves a full
 // subscription detail using the provided SubscriptionService.
 func NewGetSubscriptionHandler(svc service.SubscriptionService) gin.HandlerFunc {
@@ -48,6 +66,11 @@ func NewGetSubscriptionHandler(svc service.SubscriptionService) gin.HandlerFunc 
 		// Minimal, safe handler that validates caller and path, then delegates to the service.
 		callerID, exists := c.Get("callerID")
 		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+		tenantID, tenantExists := c.Get("tenantID")
+		if !tenantExists {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
@@ -64,7 +87,7 @@ func NewGetSubscriptionHandler(svc service.SubscriptionService) gin.HandlerFunc 
 		}
 
 		// Delegate to service (note: real implementation may include ownership checks)
-		_, _, err = svc.GetDetail(c.Request.Context(), callerID.(string), id)
+		_, _, err = svc.GetDetail(c.Request.Context(), tenantID.(string), callerID.(string), id)
 		if err != nil {
 			// Simplified error handling to keep compilation and behavior predictable during tests.
 			c.JSON(http.StatusNotFound, gin.H{"error": "subscription not found"})

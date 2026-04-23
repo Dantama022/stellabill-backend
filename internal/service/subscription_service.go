@@ -5,11 +5,12 @@ import (
 	"strconv"
 	"strings"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"stellarbill-backend/internal/repository"
 	"stellarbill-backend/internal/security"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 var tracer = otel.Tracer("service/subscriptions")
@@ -34,10 +35,11 @@ func NewSubscriptionService(subRepo repository.SubscriptionRepository, planRepo 
 // It enforces ownership (callerID must match the subscription's CustomerID),
 //
  // handles soft-deletes, joins plan metadata, and normalizes billing fields.
-func (s *subscriptionService) GetDetail(ctx context.Context, callerID string, subscriptionID string) (*SubscriptionDetail, []string, error) {
+func (s *subscriptionService) GetDetail(ctx context.Context, tenantID string, callerID string, subscriptionID string) (*SubscriptionDetail, []string, error) {
 	ctx, span := tracer.Start(ctx, "SubscriptionService.GetDetail",
-		otel.WithAttributes(
+		trace.WithAttributes(
 			attribute.String("subscription.id", subscriptionID),
+			attribute.String("tenant.id", tenantID),
 			attribute.String("caller.id", callerID),
 		))
 	defer span.End()
