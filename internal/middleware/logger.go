@@ -3,7 +3,8 @@ package middleware
 import (
 	"time"
 
-	"stellabill-backend/internal/logger"
+	"stellarbill-backend/internal/security"
+	"stellarbill-backend/internal/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -23,14 +24,18 @@ func RequestLogger() gin.HandlerFunc {
 
 		latency := time.Since(start)
 
-		logger.Log.WithFields(map[string]interface{}{
+		// Build fields with redaction applied
+		fields := map[string]interface{}{
 			"level":      "info",
 			"request_id": requestID,
 			"method":     c.Request.Method,
-			"path":       c.Request.URL.Path,
+			"path":       security.MaskPII(c.FullPath()),
 			"status":     c.Writer.Status(),
 			"latency_ms": latency.Milliseconds(),
 			"client_ip":  c.ClientIP(),
-		}).Info("request completed")
+		}
+		// Use the logger with structured fields (the Logrus hook will redact)
+		logger.Log.WithFields(fields).Info("request completed")
 	}
+}
 }
