@@ -1,11 +1,10 @@
 package logger
 
 import (
+	"fmt"
 	"os"
-	"strings"
 
 	"github.com/sirupsen/logrus"
-	"go.opentelemetry.io/contrib/bridges/otellogrus"
 	"stellarbill-backend/internal/security"
 )
 
@@ -23,16 +22,20 @@ func (h *LogrusHook) Fire(entry *logrus.Entry) error {
 	// Redact the main message
 	entry.Message = security.MaskPII(entry.Message)
 
-	// Redact fields by converting to map, applying RedactMap, then restoring.
+	// Redact fields in-place by key
 	if entry.Data != nil {
-		m := make(map[string]interface{}, len(entry.Data))
+		// Build temporary map[string]interface{} with string keys for redaction
+		tmp := make(map[string]interface{}, len(entry.Data))
 		for k, v := range entry.Data {
-			m[string(k)] = v
+			tmp[string(k)] = v
 		}
-		security.RedactMap(m)
-		// Write back
-		for k, v := range m {
-			entry.Data[logrus.FieldKey(k)] = v
+		// Apply redaction on the map
+		security.RedactMap(tmp)
+		// Write back to entry.Data using original keys
+		for k := range entry.Data {
+			if newV, ok := tmp[string(k)]; ok {
+				entry.Data[k] = newV
+			}
 		}
 	}
 	return nil
@@ -42,7 +45,8 @@ func Init() {
 	Log.SetFormatter(&logrus.JSONFormatter{})
 	Log.SetOutput(os.Stdout)
 	Log.AddHook(&LogrusHook{})
-	Log.AddHook(otellogrus.NewHook())
+	// OpenTelemetry log bridge not essential for PII redaction; disabled to avoid version mismatch.
+	// Log.AddHook(otellogrus.NewHook())
 
 	level := os.Getenv("LOG_LEVEL")
 	switch level {
@@ -83,5 +87,3 @@ func SafeWarnf(format string, args ...interface{}) {
 func SafeDebugf(format string, args ...interface{}) {
 	Log.Debugf(security.MaskPII(fmt.Sprintf(format, args...)))
 }
-
-import "fmt"

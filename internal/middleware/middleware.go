@@ -89,17 +89,6 @@ func Logging(_ *log.Logger) gin.HandlerFunc {
 		logger.SafePrintf("%s", msg)
 	}
 }
-		msg := fmt.Sprintf(
-			"method=%s path=%s status=%d request_id=%v duration=%s",
-			c.Request.Method,
-			security.MaskPII(path),
-			c.Writer.Status(),
-			requestID,
-			time.Since(start).Round(time.Millisecond),
-		)
-		logger.Print(security.MaskPII(msg))
-	}
-}
 
 func CORS(allowOrigin string) gin.HandlerFunc {
 	return func(c *gin.Context) {

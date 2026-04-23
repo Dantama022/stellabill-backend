@@ -38,4 +38,3 @@ func RequestLogger() gin.HandlerFunc {
 		logger.Log.WithFields(fields).Info("request completed")
 	}
 }
-}

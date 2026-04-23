@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"stellarbill-backend/internal/logger"
-	"stellabill-backend/internal/security"
+	"stellarbill-backend/internal/security"
 
 	"github.com/gin-gonic/gin"
 )
@@ -33,11 +33,6 @@ func RecoveryLogger() gin.HandlerFunc {
 				})
 				c.Abort()
 			}
-		}()
-
-		c.Next()
-	}
-}
 		}()
 
 		c.Next()
