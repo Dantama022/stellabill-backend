@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"stellarbill-backend/internal/auth"
 
 	"github.com/gin-gonic/gin"
 	"stellarbill-backend/internal/repository"
@@ -14,13 +15,14 @@ import (
 // statement detail using the provided StatementService.
 func NewGetStatementHandler(svc service.StatementService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 1. Read callerID from context (set by AuthMiddleware).
 		callerID, exists := c.Get("callerID")
 		if !exists {
 			c.Header("Content-Type", "application/json; charset=utf-8")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
+
+		roles := auth.ExtractRoles(c)
 
 		// 2. Validate :id path param.
 		id := c.Param("id")
@@ -31,7 +33,7 @@ func NewGetStatementHandler(svc service.StatementService) gin.HandlerFunc {
 		}
 
 		// 3. Call service.
-		detail, warnings, err := svc.GetDetail(c.Request.Context(), callerID.(string), id)
+		detail, warnings, err := svc.GetDetail(c.Request.Context(), callerID.(string), rolesToStrings(roles), id)
 		if err != nil {
 			c.Header("Content-Type", "application/json; charset=utf-8")
 			switch err {
@@ -63,13 +65,14 @@ func NewGetStatementHandler(svc service.StatementService) gin.HandlerFunc {
 // statements for a customer using the provided StatementService.
 func NewListStatementsHandler(svc service.StatementService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 1. Read callerID from context (set by AuthMiddleware).
 		callerID, exists := c.Get("callerID")
 		if !exists {
 			c.Header("Content-Type", "application/json; charset=utf-8")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
+
+		roles := auth.ExtractRoles(c)
 
 		// 2. Build query from optional filters.
 		q := repository.StatementQuery{
@@ -78,21 +81,28 @@ func NewListStatementsHandler(svc service.StatementService) gin.HandlerFunc {
 			Status:         c.Query("status"),
 			StartAfter:     c.Query("start_after"),
 			EndBefore:      c.Query("end_before"),
+			StartingAfter:  c.Query("starting_after"),
+			EndingBefore:   c.Query("ending_before"),
+			Order:          c.Query("order"),
 		}
 
-		if ps := c.Query("page_size"); ps != "" {
-			if v, err := strconv.Atoi(ps); err == nil {
-				q.PageSize = v
+		if l := c.Query("limit"); l != "" {
+			if v, err := strconv.Atoi(l); err == nil {
+				q.Limit = v
 			}
-		}
-		if p := c.Query("page"); p != "" {
-			if v, err := strconv.Atoi(p); err == nil {
-				q.Page = v
+		} else if ps := c.Query("page_size"); ps != "" { // backward compatibility
+			if v, err := strconv.Atoi(ps); err == nil {
+				q.Limit = v
 			}
 		}
 
 		// 3. Call service.
-		detail, count, warnings, err := svc.ListByCustomer(c.Request.Context(), callerID.(string), callerID.(string), q)
+		customerID := c.Query("customer_id")
+		if customerID == "" {
+			customerID = callerID.(string)
+		}
+
+		detail, count, warnings, err := svc.ListByCustomer(c.Request.Context(), callerID.(string), rolesToStrings(roles), customerID, q)
 		if err != nil {
 			c.Header("Content-Type", "application/json; charset=utf-8")
 			switch err {
@@ -105,13 +115,9 @@ func NewListStatementsHandler(svc service.StatementService) gin.HandlerFunc {
 		}
 
 		// 4. Normalise pagination values for response.
-		page := q.Page
-		if page <= 0 {
-			page = 1
-		}
-		pageSize := q.PageSize
-		if pageSize <= 0 {
-			pageSize = 10
+		limit := q.Limit
+		if limit <= 0 {
+			limit = 10
 		}
 
 		// 5. Build response envelope with pagination.
@@ -122,13 +128,25 @@ func NewListStatementsHandler(svc service.StatementService) gin.HandlerFunc {
 				Warnings:   warnings,
 			},
 			Pagination: service.PaginationMetadata{
-				Page:     page,
-				PageSize: pageSize,
-				Count:    count,
+				TotalCount: count,
+				HasMore:    len(detail.Statements) >= limit,
 			},
+		}
+		// Set next cursor if we have more results. 
+		// In a real app, this would be the ID or IssuedAt of the last item.
+		if resp.Pagination.HasMore && len(detail.Statements) > 0 {
+			resp.Pagination.NextCursor = detail.Statements[len(detail.Statements)-1].ID
 		}
 
 		c.Header("Content-Type", "application/json; charset=utf-8")
 		c.JSON(http.StatusOK, resp)
 	}
+}
+
+func rolesToStrings(roles []auth.Role) []string {
+	strs := make([]string, len(roles))
+	for i, r := range roles {
+		strs[i] = string(r)
+	}
+	return strs
 }

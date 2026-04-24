@@ -107,8 +107,16 @@ func Register(r *gin.Engine) {
 
 		// Example future admin-only endpoints:
 		// api.POST("/plans", auth.RequirePermission(auth.PermManagePlans), ...)
-		api.GET("/statements/:id", middleware.AuthMiddleware(jwtSecret), handlers.NewGetStatementHandler(stmtSvc))
-		api.GET("/statements", middleware.AuthMiddleware(jwtSecret), handlers.NewListStatementsHandler(stmtSvc))
+		api.GET("/statements/:id",
+			middleware.AuthMiddleware(jwtSecret),
+			auth.RequirePermission(auth.PermReadStatements),
+			handlers.NewGetStatementHandler(stmtSvc),
+		)
+		api.GET("/statements",
+			middleware.AuthMiddleware(jwtSecret),
+			auth.RequirePermission(auth.PermReadStatements),
+			handlers.NewListStatementsHandler(stmtSvc),
+		)
 
 		admin := api.Group("/admin")
 		{

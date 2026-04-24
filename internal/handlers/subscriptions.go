@@ -31,14 +31,12 @@ func (h *Handler) ListSubscriptions(c *gin.Context) {
 
 func (h *Handler) GetSubscription(c *gin.Context) {
 	id := c.Param("id")
-	c.JSON(http.StatusOK, Subscription{
-		ID:       id,
-		PlanID:   "plan_placeholder",
-		Customer: "customer_placeholder",
-		Status:   "placeholder",
-		Amount:   "0",
-		Interval: "monthly",
-	})
+	sub, err := h.Subscriptions.GetSubscription(c, id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	c.JSON(http.StatusOK, sub)
 }
 
 // ListSubscriptions handles global route registration.
