@@ -16,6 +16,7 @@ tags:
   - name: Health
   - name: Plans
   - name: Subscriptions
+  - name: ContractEvents
 paths:
   /api/health:
     get:
@@ -72,8 +73,153 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Subscription"
+  /api/contract-events:
+    post:
+      tags: [ContractEvents]
+      summary: Ingest a contract event
+      operationId: ingestContractEvent
+      description: |
+        Mutation endpoint. Strict JSON decoding is enforced:
+        - Unknown fields are rejected with `400 UNKNOWN_FIELD`.
+        - Type mismatches are rejected with `400 INVALID_FIELD_TYPE`.
+        - Trailing data after the JSON object is rejected with `400 INVALID_JSON`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RawEvent"
+            examples:
+              valid:
+                summary: Valid event
+                value:
+                  idempotency_key: "key-001"
+                  event_type: "contract.created"
+                  contract_id: "contract-abc"
+                  tenant_id: "tenant-xyz"
+                  occurred_at: "2026-04-24T00:00:00Z"
+                  sequence_num: 1
+                  payload: {}
+              unknown_field_rejected:
+                summary: Unknown field — rejected 400
+                value:
+                  idempotency_key: "key-002"
+                  event_type: "contract.created"
+                  contract_id: "contract-abc"
+                  tenant_id: "tenant-xyz"
+                  occurred_at: "2026-04-24T00:00:00Z"
+                  sequence_num: 1
+                  payload: {}
+                  unexpected_field: "this will be rejected"
+      responses:
+        "201":
+          description: Event ingested
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ContractEvent"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecodeErrorResponse"
+              examples:
+                unknown_field:
+                  value:
+                    code: "UNKNOWN_FIELD"
+                    message: "json: unknown field \"unexpected_field\""
+                type_mismatch:
+                  value:
+                    code: "INVALID_FIELD_TYPE"
+                    message: "field \"sequence_num\": expected int64"
+                malformed:
+                  value:
+                    code: "INVALID_JSON"
+                    message: "malformed JSON at position 12"
+        "409":
+          description: Duplicate or out-of-order event
 components:
   schemas:
+    RawEvent:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, event_type, contract_id, tenant_id, occurred_at, sequence_num, payload]
+      properties:
+        idempotency_key:
+          type: string
+          example: "key-001"
+        event_type:
+          type: string
+          enum: [contract.created, contract.amended, contract.renewed, contract.cancelled, contract.expired]
+          example: "contract.created"
+        contract_id:
+          type: string
+          example: "contract-abc"
+        tenant_id:
+          type: string
+          example: "tenant-xyz"
+        occurred_at:
+          type: string
+          format: date-time
+          example: "2026-04-24T00:00:00Z"
+        sequence_num:
+          type: integer
+          format: int64
+          example: 1
+        payload:
+          type: object
+          description: Arbitrary event payload.
+    ContractEvent:
+      type: object
+      additionalProperties: false
+      required: [id, idempotency_key, event_type, contract_id, tenant_id, occurred_at, ingested_at, sequence_num, status]
+      properties:
+        id:
+          type: string
+        idempotency_key:
+          type: string
+        event_type:
+          type: string
+        contract_id:
+          type: string
+        tenant_id:
+          type: string
+        payload:
+          type: object
+        occurred_at:
+          type: string
+          format: date-time
+        ingested_at:
+          type: string
+          format: date-time
+        sequence_num:
+          type: integer
+          format: int64
+        status:
+          type: string
+    DecodeErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [UNKNOWN_FIELD, INVALID_FIELD_TYPE, INVALID_JSON, INVALID_BODY]
+          description: |
+            Machine-readable error code for strict-decode failures on mutation endpoints.
+            - `UNKNOWN_FIELD`: request body contains a field not in the schema.
+            - `INVALID_FIELD_TYPE`: a field value has the wrong JSON type.
+            - `INVALID_JSON`: malformed JSON or trailing data.
+            - `INVALID_BODY`: request body could not be read.
+        message:
+          type: string
+          description: Human-readable description of the error.
     HealthResponse:
       type: object
       additionalProperties: false
