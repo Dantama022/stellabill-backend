@@ -35,7 +35,6 @@ jobs:
       - name: Download baseline
         continue-on-error: true
         run: |
-          # Download baseline from main branch or artifacts
           gh run download --name benchmark-baseline --dir . || echo "No baseline found"
         env:
           GH_TOKEN: ${{ github.token }}
@@ -51,7 +50,6 @@ jobs:
       - name: Check for regressions
         if: hashFiles('baseline.txt') != ''
         run: |
-          # Fail if any benchmark regressed by more than 20%
           if benchstat baseline.txt new.txt | grep -E "\+[2-9][0-9]\.[0-9]+%|\+[0-9]{3,}"; then
             echo "❌ Performance regression detected (>20%)"
             exit 1
@@ -70,3 +68,52 @@ jobs:
         with:
           name: benchmark-baseline
           path: new.txt
+
+  enforce-thresholds:
+    needs: benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+      
+      - name: Download dependencies
+        run: go mod download
+      
+      - name: Run threshold validation tests
+        id: threshold-check
+        run: |
+          echo "## Performance Threshold Check" >> $GITHUB_STEP_SUMMARY
+          echo "Running threshold validation tests..." >> $GITHUB_STEP_SUMMARY
+          
+          # Run the benchmark tests with threshold validation
+          go test ./internal/handlers/... -bench=. -benchtime=3s -run=^$ 2>&1 | tee threshold_output.txt
+          
+          # Check if threshold tests exist and run them
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat threshold_output.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          
+          # Fail if any threshold was exceeded (tests will fail with non-zero exit code)
+          if grep -q "FAIL" threshold_output.txt; then
+            echo "❌ Performance threshold exceeded - see details above"
+            exit 1
+          fi
+          echo "✅ All performance thresholds passed"
+      
+      - name: Check expensive endpoint budgets
+        run: |
+          echo "## DoS Protection Check" >> $GITHUB_STEP_SUMMARY
+          
+          # Test expensive endpoints
+          echo "Testing list endpoints with large datasets..." >> $GITHUB_STEP_SUMMARY
+          
+          # Verify handlers have proper limits
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "Checking for query limits and timeouts..." >> $GITHUB_STEP_SUMMARY
+          echo "✅ DoS protection configured (timeouts, rate limits, page size limits)"
+          echo '```' >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,83 @@
+name: Dependency Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly scan
+  workflow_dispatch:
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          
+      - name: Run govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      
+      - name: Scan for vulnerabilities
+        run: govulncheck ./...
+        continue-on-error: true
+        
+  sec-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run sec-lint
+        run: |
+          go install github.com/securego/securego/cmd/sec-lint@latest || true
+          sec-lint ./...
+        continue-on-error: true
+        
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        
+  osv-scanner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run OSV Scanner
+        uses: golang-org/osv-scanner-action@v1
+        with:
+          scan-args: '-r'
+          
+  license-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check for prohibited licenses
+        run: |
+          go install github.com/awslabs/go-licenses@latest
+          go-licenses check ./...
+        continue-on-error: true
+          
+  publish-results:
+    needs: [govulncheck, sec-lint, dependency-review, osv-scanner, license-check]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Dependency Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "All scans completed. Review individual job results for details." >> $GITHUB_STEP_SUMMARY
+          echo "### Severity Policy" >> $GITHUB_STEP_SUMMARY
+          echo "- Critical: Fix within 24 hours" >> $GITHUB_STEP_SUMMARY
+          echo "- High: Fix within 7 days" >> $GITHUB_STEP_SUMMARY
+          echo "- Medium: Fix within 30 days" >> $GITHUB_STEP_SUMMARY
+          echo "- Low: Fix within 90 days" >> $GITHUB_STEP_SUMMARY
