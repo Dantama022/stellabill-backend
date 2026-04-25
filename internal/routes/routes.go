@@ -32,6 +32,14 @@ func Register(r *gin.Engine) {
 		}
 	}
 
+	// Hardened panic recovery is registered at the engine level so it covers
+	// every middleware and handler that follows. RequestID is installed
+	// first so panics that fire before downstream middleware still produce a
+	// response with a correlation id. Both are no-ops if the parent main()
+	// already attached them — Gin will just record duplicate handlers.
+	r.Use(middleware.RequestID())
+	r.Use(middleware.Recovery())
+
 	// Add OpenTelemetry middleware
 	r.Use(otelgin.Middleware(cfg.TracingServiceName))
 	// Add TraceID middleware to bridge OTEL trace ID to response headers

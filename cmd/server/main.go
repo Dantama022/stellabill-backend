@@ -61,9 +61,12 @@ func main() {
 		logger.Fatal("Startup checks failed — aborting")
 	}
 
-	// Create router with configured middleware
+	// Create router with configured middleware. RequestID runs first so the
+	// hardened Recovery middleware can correlate every panic log line and
+	// error envelope with a stable id.
 	router := gin.New()
-	router.Use(gin.Recovery())
+	router.Use(middleware.RequestID())
+	router.Use(middleware.Recovery())
 	router.Use(middleware.Logger(logger))
 
 	// Security headers middleware
@@ -149,7 +152,10 @@ func main() {
 
 	r := gin.New()
 
-	r.Use(middleware.RecoveryLogger())
+	// Order matters: RequestID first so the hardened Recovery middleware can
+	// always include a correlation id in the log and the error envelope.
+	r.Use(middleware.RequestID())
+	r.Use(middleware.Recovery())
 	r.Use(middleware.RequestLogger())
 
 	var db *sql.DB = nil // existing or future DB
