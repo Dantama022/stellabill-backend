@@ -14,6 +14,7 @@ import (
 type CachedSubscriptionRepo struct {
 	backend SubscriptionRepository
 	cache   cache.Cache
+	guard   *cache.GuardedCache
 	ttl     time.Duration
 
 	hits   uint64
@@ -29,6 +30,7 @@ func NewCachedSubscriptionRepo(backend SubscriptionRepository, c cache.Cache, tt
 	return &CachedSubscriptionRepo{
 		backend:       backend,
 		cache:         c,
+		guard:         cache.NewGuardedCache(c),
 		ttl:           ttl,
 		invalidatedAt: make(map[string]time.Time),
 	}
@@ -67,70 +69,105 @@ func (csr *CachedSubscriptionRepo) readEnvelope(ctx context.Context, key string)
 	return &env, true
 }
 
-func (csr *CachedSubscriptionRepo) writeEnvelope(ctx context.Context, key string, data []byte) {
-	if csr.cache == nil {
-		return
-	}
-	env := cacheEnvelope{Data: data, StoredAt: time.Now()}
-	b, err := json.Marshal(env)
-	if err == nil {
-		_ = csr.cache.Set(ctx, key, b, csr.ttl)
-	}
-}
-
 // FindByID implements SubscriptionRepository. It reads from cache first, falls back to backend
 // and updates cache on a successful backend read.
 func (csr *CachedSubscriptionRepo) FindByID(ctx context.Context, id string) (*SubscriptionRow, error) {
 	key := csr.cacheKey(id)
 
+	// Fast path: fresh cache hit
 	if env, ok := csr.readEnvelope(ctx, key); ok && !csr.isStale(key, *env) {
 		var sr SubscriptionRow
 		if err := json.Unmarshal(env.Data, &sr); err == nil {
 			atomic.AddUint64(&csr.hits, 1)
 			return &sr, nil
 		}
+		// Inner data corrupt; purge so GetOrLoad refreshes
+		_ = csr.cache.Delete(ctx, key)
 	}
 
+	// Stale path: cached but invalidated — purge so GetOrLoad loads fresh
 	if env, ok := csr.readEnvelope(ctx, key); ok && csr.isStale(key, *env) {
 		atomic.AddUint64(&csr.stales, 1)
+		_ = csr.cache.Delete(ctx, key)
 	}
 
+	// Miss or stale-removed path: guarded load from backend
 	atomic.AddUint64(&csr.misses, 1)
-	sr, err := csr.backend.FindByID(ctx, id)
+	envelopeBytes, err := csr.guard.GetOrLoad(ctx, key, csr.ttl, func() ([]byte, error) {
+		sr, err := csr.backend.FindByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.Marshal(sr)
+		if err != nil {
+			return nil, err
+		}
+		env := cacheEnvelope{Data: data, StoredAt: time.Now()}
+		return json.Marshal(env)
+	})
 	if err != nil {
 		return nil, err
 	}
-	if b, err := json.Marshal(sr); err == nil {
-		csr.writeEnvelope(ctx, key, b)
+
+	var env cacheEnvelope
+	if err := json.Unmarshal(envelopeBytes, &env); err != nil {
+		return nil, err
 	}
-	return sr, nil
+	var sr SubscriptionRow
+	if err := json.Unmarshal(env.Data, &sr); err != nil {
+		return nil, err
+	}
+	return &sr, nil
 }
 
 // FindByIDAndTenant implements SubscriptionRepository with tenant-scoped caching.
 func (csr *CachedSubscriptionRepo) FindByIDAndTenant(ctx context.Context, id string, tenantID string) (*SubscriptionRow, error) {
 	key := csr.tenantCacheKey(id, tenantID)
 
+	// Fast path: fresh cache hit
 	if env, ok := csr.readEnvelope(ctx, key); ok && !csr.isStale(key, *env) {
 		var sr SubscriptionRow
 		if err := json.Unmarshal(env.Data, &sr); err == nil {
 			atomic.AddUint64(&csr.hits, 1)
 			return &sr, nil
 		}
+		// Inner data corrupt; purge so GetOrLoad refreshes
+		_ = csr.cache.Delete(ctx, key)
 	}
 
+	// Stale path: cached but invalidated — purge so GetOrLoad loads fresh
 	if env, ok := csr.readEnvelope(ctx, key); ok && csr.isStale(key, *env) {
 		atomic.AddUint64(&csr.stales, 1)
+		_ = csr.cache.Delete(ctx, key)
 	}
 
+	// Miss or stale-removed path: guarded load from backend
 	atomic.AddUint64(&csr.misses, 1)
-	sr, err := csr.backend.FindByIDAndTenant(ctx, id, tenantID)
+	envelopeBytes, err := csr.guard.GetOrLoad(ctx, key, csr.ttl, func() ([]byte, error) {
+		sr, err := csr.backend.FindByIDAndTenant(ctx, id, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.Marshal(sr)
+		if err != nil {
+			return nil, err
+		}
+		env := cacheEnvelope{Data: data, StoredAt: time.Now()}
+		return json.Marshal(env)
+	})
 	if err != nil {
 		return nil, err
 	}
-	if b, err := json.Marshal(sr); err == nil {
-		csr.writeEnvelope(ctx, key, b)
+
+	var env cacheEnvelope
+	if err := json.Unmarshal(envelopeBytes, &env); err != nil {
+		return nil, err
 	}
-	return sr, nil
+	var sr SubscriptionRow
+	if err := json.Unmarshal(env.Data, &sr); err != nil {
+		return nil, err
+	}
+	return &sr, nil
 }
 
 // Delete removes cached entries for a subscription and records invalidation times.
@@ -142,8 +179,8 @@ func (csr *CachedSubscriptionRepo) Delete(ctx context.Context, id string, tenant
 	key := csr.cacheKey(id)
 	tenantKey := csr.tenantCacheKey(id, tenantID)
 
-	_ = csr.cache.Delete(ctx, key)
-	_ = csr.cache.Delete(ctx, tenantKey)
+	_ = csr.guard.Delete(ctx, key)
+	_ = csr.guard.Delete(ctx, tenantKey)
 
 	now := time.Now()
 	csr.invalidatedMu.Lock()

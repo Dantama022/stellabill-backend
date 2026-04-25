@@ -21,6 +21,7 @@ type cacheEnvelope struct {
 type CachedPlanRepo struct {
 	backend PlanRepository
 	cache   cache.Cache
+	guard   *cache.GuardedCache
 	ttl     time.Duration
 
 	hits   uint64
@@ -36,6 +37,7 @@ func NewCachedPlanRepo(backend PlanRepository, c cache.Cache, ttl time.Duration)
 	return &CachedPlanRepo{
 		backend:       backend,
 		cache:         c,
+		guard:         cache.NewGuardedCache(c),
 		ttl:           ttl,
 		invalidatedAt: make(map[string]time.Time),
 	}
@@ -74,69 +76,103 @@ func (cpr *CachedPlanRepo) readEnvelope(ctx context.Context, key string) (*cache
 	return &env, true
 }
 
-func (cpr *CachedPlanRepo) writeEnvelope(ctx context.Context, key string, data []byte) {
-	if cpr.cache == nil {
-		return
-	}
-	env := cacheEnvelope{Data: data, StoredAt: time.Now()}
-	b, err := json.Marshal(env)
-	if err == nil {
-		_ = cpr.cache.Set(ctx, key, b, cpr.ttl)
-	}
-}
-
 // FindByID implements PlanRepository. It reads from cache first, falls back to backend
 // and updates cache on a successful backend read.
 func (cpr *CachedPlanRepo) FindByID(ctx context.Context, id string) (*PlanRow, error) {
 	key := cpr.cacheKey(id)
 
+	// Fast path: fresh cache hit
 	if env, ok := cpr.readEnvelope(ctx, key); ok && !cpr.isStale(key, *env) {
 		var pr PlanRow
 		if err := json.Unmarshal(env.Data, &pr); err == nil {
 			atomic.AddUint64(&cpr.hits, 1)
 			return &pr, nil
 		}
+		// Inner data corrupt; purge so GetOrLoad refreshes
+		_ = cpr.cache.Delete(ctx, key)
 	}
 
+	// Stale path: cached but invalidated — purge so GetOrLoad loads fresh
 	if env, ok := cpr.readEnvelope(ctx, key); ok && cpr.isStale(key, *env) {
 		atomic.AddUint64(&cpr.stales, 1)
-		// fallthrough to backend to refresh
+		_ = cpr.cache.Delete(ctx, key)
 	}
 
+	// Miss or stale-removed path: guarded load from backend
 	atomic.AddUint64(&cpr.misses, 1)
-	pr, err := cpr.backend.FindByID(ctx, id)
+	envelopeBytes, err := cpr.guard.GetOrLoad(ctx, key, cpr.ttl, func() ([]byte, error) {
+		pr, err := cpr.backend.FindByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.Marshal(pr)
+		if err != nil {
+			return nil, err
+		}
+		env := cacheEnvelope{Data: data, StoredAt: time.Now()}
+		return json.Marshal(env)
+	})
 	if err != nil {
 		return nil, err
 	}
-	if b, err := json.Marshal(pr); err == nil {
-		cpr.writeEnvelope(ctx, key, b)
+
+	var env cacheEnvelope
+	if err := json.Unmarshal(envelopeBytes, &env); err != nil {
+		return nil, err
 	}
-	return pr, nil
+	var pr PlanRow
+	if err := json.Unmarshal(env.Data, &pr); err != nil {
+		return nil, err
+	}
+	return &pr, nil
 }
 
 // List returns all plans. It caches the full list under a single key.
 func (cpr *CachedPlanRepo) List(ctx context.Context) ([]*PlanRow, error) {
 	key := cpr.listKey()
 
+	// Fast path: fresh cache hit
 	if env, ok := cpr.readEnvelope(ctx, key); ok && !cpr.isStale(key, *env) {
 		var out []*PlanRow
 		if err := json.Unmarshal(env.Data, &out); err == nil {
 			atomic.AddUint64(&cpr.hits, 1)
 			return out, nil
 		}
+		// Inner data corrupt; purge so GetOrLoad refreshes
+		_ = cpr.cache.Delete(ctx, key)
 	}
 
+	// Stale path: cached but invalidated — purge so GetOrLoad loads fresh
 	if env, ok := cpr.readEnvelope(ctx, key); ok && cpr.isStale(key, *env) {
 		atomic.AddUint64(&cpr.stales, 1)
+		_ = cpr.cache.Delete(ctx, key)
 	}
 
+	// Miss or stale-removed path: guarded load from backend
 	atomic.AddUint64(&cpr.misses, 1)
-	out, err := cpr.backend.List(ctx)
+	envelopeBytes, err := cpr.guard.GetOrLoad(ctx, key, cpr.ttl, func() ([]byte, error) {
+		out, err := cpr.backend.List(ctx)
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.Marshal(out)
+		if err != nil {
+			return nil, err
+		}
+		env := cacheEnvelope{Data: data, StoredAt: time.Now()}
+		return json.Marshal(env)
+	})
 	if err != nil {
 		return nil, err
 	}
-	if b, err := json.Marshal(out); err == nil {
-		cpr.writeEnvelope(ctx, key, b)
+
+	var env cacheEnvelope
+	if err := json.Unmarshal(envelopeBytes, &env); err != nil {
+		return nil, err
+	}
+	var out []*PlanRow
+	if err := json.Unmarshal(env.Data, &out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -149,8 +185,8 @@ func (cpr *CachedPlanRepo) Delete(ctx context.Context, id string) error {
 	key := cpr.cacheKey(id)
 	listKey := cpr.listKey()
 
-	_ = cpr.cache.Delete(ctx, key)
-	_ = cpr.cache.Delete(ctx, listKey)
+	_ = cpr.guard.Delete(ctx, key)
+	_ = cpr.guard.Delete(ctx, listKey)
 
 	now := time.Now()
 	cpr.invalidatedMu.Lock()

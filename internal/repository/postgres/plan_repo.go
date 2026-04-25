@@ -8,8 +8,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"stellarbill-backend/internal/repository"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var tracer = otel.Tracer("repository/postgres")
@@ -34,7 +36,7 @@ func (r *PlanRepo) FindByID(ctx context.Context, id string) (*repository.PlanRow
 
 	var p repository.PlanRow
 	ctx, span := tracer.Start(ctx, "PlanRepo.FindByID",
-		otel.WithAttributes(attribute.String("plan.id", id)))
+		trace.WithAttributes(attribute.String("plan.id", id)))
 	defer span.End()
 
 	err := r.pool.QueryRow(ctx, q, id).

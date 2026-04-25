@@ -190,6 +190,84 @@ func TestCachedPlanRepo_StaleRead(t *testing.T) {
 	}
 }
 
+func TestCachedPlanRepo_CorruptEnvelope(t *testing.T) {
+	ctx := context.Background()
+	backend := NewMockPlanRepo(&PlanRow{ID: "plan-corrupt", Name: "C", Amount: "1000", Currency: "usd", Interval: "month"})
+	mem := cache.NewInMemory()
+	cpr := NewCachedPlanRepo(backend, mem, time.Minute)
+
+	// Inject valid envelope with corrupt inner data
+	env := cacheEnvelope{Data: []byte("not-json"), StoredAt: time.Now()}
+	if b, err := json.Marshal(env); err == nil {
+		_ = mem.Set(ctx, cpr.cacheKey("plan-corrupt"), b, time.Minute)
+	}
+
+	// Should fall back to backend, not panic
+	p, err := cpr.FindByID(ctx, "plan-corrupt")
+	if err != nil {
+		t.Fatalf("unexpected error on corrupt envelope: %v", err)
+	}
+	if p.Name != "C" {
+		t.Fatalf("expected fallback to backend on corrupt envelope, got %s", p.Name)
+	}
+}
+
+func TestCachedPlanRepo_ListStaleDetection(t *testing.T) {
+	ctx := context.Background()
+	backend := NewMockPlanRepo(
+		&PlanRow{ID: "plan-s1", Name: "S1", Amount: "1000", Currency: "usd", Interval: "month"},
+	)
+	mem := cache.NewInMemory()
+	cpr := NewCachedPlanRepo(backend, mem, time.Minute)
+
+	// Prime list cache
+	if _, err := cpr.List(ctx); err != nil {
+		t.Fatalf("prime error: %v", err)
+	}
+
+	// Mutate backend
+	backend.records["plan-s1"].Name = "S1-Updated"
+
+	// Delete to invalidate
+	if err := cpr.Delete(ctx, "plan-s1"); err != nil {
+		t.Fatalf("delete error: %v", err)
+	}
+
+	// Inject stale list envelope directly
+	staleEnv := cacheEnvelope{
+		Data:     []byte(`[{"id":"plan-s1","name":"S1","amount":"1000","currency":"usd","interval":"month"}]`),
+		StoredAt: time.Now().Add(-time.Hour),
+	}
+	if b, err := json.Marshal(staleEnv); err == nil {
+		_ = mem.Set(ctx, cpr.listKey(), b, time.Minute)
+	}
+
+	// Should detect stale list and refetch
+	list, err := cpr.List(ctx)
+	if err != nil {
+		t.Fatalf("list after stale injection error: %v", err)
+	}
+	if len(list) != 1 || list[0].Name != "S1-Updated" {
+		t.Fatalf("expected updated list after stale detection")
+	}
+
+	_, _, stales := cpr.Metrics()
+	if stales < 1 {
+		t.Fatalf("expected stale > 0 for list, got stales=%d", stales)
+	}
+}
+
+func TestCachedPlanRepo_DeleteNilCache(t *testing.T) {
+	ctx := context.Background()
+	backend := NewMockPlanRepo(&PlanRow{ID: "plan-nil", Name: "Nil", Amount: "1000", Currency: "usd", Interval: "month"})
+	cpr := NewCachedPlanRepo(backend, nil, time.Minute)
+
+	// Delete with nil cache should not panic
+	if err := cpr.Delete(ctx, "plan-nil"); err != nil {
+		t.Fatalf("unexpected error on nil cache delete: %v", err)
+	}
+}
+
 func TestCachedPlanRepo_ListCaching(t *testing.T) {
 	ctx := context.Background()
 	backend := NewMockPlanRepo(
@@ -244,5 +322,54 @@ func TestCachedPlanRepo_ListCaching(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected list to reflect updated plan-a after invalidation")
+	}
+}
+
+// countingPlanRepo wraps a PlanRepository and counts FindByID calls.
+type countingPlanRepo struct {
+	inner PlanRepository
+	count int
+	mu    sync.Mutex
+}
+
+func (c *countingPlanRepo) FindByID(ctx context.Context, id string) (*PlanRow, error) {
+	c.mu.Lock()
+	c.count++
+	c.mu.Unlock()
+	time.Sleep(50 * time.Millisecond) // simulate slow DB
+	return c.inner.FindByID(ctx, id)
+}
+
+func (c *countingPlanRepo) List(ctx context.Context) ([]*PlanRow, error) {
+	return c.inner.List(ctx)
+}
+
+func TestCachedPlanRepo_StampedeProtection(t *testing.T) {
+	ctx := context.Background()
+	baseBackend := NewMockPlanRepo(&PlanRow{ID: "plan-stamp", Name: "Stamp", Amount: "1000", Currency: "usd", Interval: "month"})
+	backend := &countingPlanRepo{inner: baseBackend}
+	mem := cache.NewInMemory()
+	cpr := NewCachedPlanRepo(backend, mem, time.Minute)
+
+	var wg sync.WaitGroup
+	// Launch 50 concurrent requests for the same key
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = cpr.FindByID(ctx, "plan-stamp")
+		}()
+	}
+	wg.Wait()
+
+	// Only 1 backend query should have happened, not 50
+	if backend.count != 1 {
+		t.Fatalf("expected 1 backend hit during stampede, got %d", backend.count)
+	}
+
+	// All 50 requests should succeed and return the correct value
+	hits, misses, _ := cpr.Metrics()
+	if hits+misses != 50 {
+		t.Fatalf("expected 50 total reads, got hits=%d misses=%d", hits, misses)
 	}
 }

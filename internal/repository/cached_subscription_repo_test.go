@@ -230,6 +230,108 @@ func TestCachedSubscriptionRepo_ConcurrentInvalidation(t *testing.T) {
 	}
 }
 
+func TestCachedSubscriptionRepo_CorruptEnvelope(t *testing.T) {
+	ctx := context.Background()
+	backend := NewMockSubscriptionRepo(&SubscriptionRow{
+		ID: "sub-corrupt", PlanID: "plan-1", TenantID: "tenant-c",
+		Status: "active", Amount: "1000", Currency: "usd", Interval: "month",
+	})
+	mem := cache.NewInMemory()
+	csr := NewCachedSubscriptionRepo(backend, mem, time.Minute)
+
+	// Inject valid envelope with corrupt inner data
+	env := cacheEnvelope{Data: []byte("not-json"), StoredAt: time.Now()}
+	if b, err := json.Marshal(env); err == nil {
+		_ = mem.Set(ctx, csr.cacheKey("sub-corrupt"), b, time.Minute)
+	}
+
+	sr, err := csr.FindByID(ctx, "sub-corrupt")
+	if err != nil {
+		t.Fatalf("unexpected error on corrupt envelope: %v", err)
+	}
+	if sr.ID != "sub-corrupt" {
+		t.Fatalf("expected fallback to backend on corrupt envelope, got %s", sr.ID)
+	}
+}
+
+func TestCachedSubscriptionRepo_StaleTenant(t *testing.T) {
+	ctx := context.Background()
+	backend := NewMockSubscriptionRepo(&SubscriptionRow{
+		ID: "sub-stale", PlanID: "plan-1", TenantID: "tenant-d",
+		Status: "active", Amount: "1000", Currency: "usd", Interval: "month",
+	})
+	mem := cache.NewInMemory()
+	csr := NewCachedSubscriptionRepo(backend, mem, time.Minute)
+
+	// Prime tenant cache
+	if _, err := csr.FindByIDAndTenant(ctx, "sub-stale", "tenant-d"); err != nil {
+		t.Fatalf("prime error: %v", err)
+	}
+
+	// Mutate backend
+	backend.records["sub-stale"].Status = "canceled"
+
+	// Delete to invalidate
+	if err := csr.Delete(ctx, "sub-stale", "tenant-d"); err != nil {
+		t.Fatalf("delete error: %v", err)
+	}
+
+	// Inject stale tenant envelope directly
+	staleEnv := cacheEnvelope{
+		Data:     []byte(`{"id":"sub-stale","plan_id":"plan-1","tenant_id":"tenant-d","status":"active","amount":"1000","currency":"usd","interval":"month"}`),
+		StoredAt: time.Now().Add(-time.Hour),
+	}
+	if b, err := json.Marshal(staleEnv); err == nil {
+		_ = mem.Set(ctx, csr.tenantCacheKey("sub-stale", "tenant-d"), b, time.Minute)
+	}
+
+	// Should detect stale tenant entry and refetch
+	sr, err := csr.FindByIDAndTenant(ctx, "sub-stale", "tenant-d")
+	if err != nil {
+		t.Fatalf("tenant read after stale injection error: %v", err)
+	}
+	if sr.Status != "canceled" {
+		t.Fatalf("expected canceled after stale detection, got %s", sr.Status)
+	}
+
+	_, _, stales := csr.Metrics()
+	if stales < 1 {
+		t.Fatalf("expected stale > 0 for tenant, got stales=%d", stales)
+	}
+}
+
+func TestCachedSubscriptionRepo_DeleteNilCache(t *testing.T) {
+	ctx := context.Background()
+	backend := NewMockSubscriptionRepo(&SubscriptionRow{
+		ID: "sub-nil", PlanID: "plan-1", TenantID: "tenant-e",
+		Status: "active", Amount: "1000", Currency: "usd", Interval: "month",
+	})
+	csr := NewCachedSubscriptionRepo(backend, nil, time.Minute)
+
+	if err := csr.Delete(ctx, "sub-nil", "tenant-e"); err != nil {
+		t.Fatalf("unexpected error on nil cache delete: %v", err)
+	}
+}
+
+func TestCachedSubscriptionRepo_CacheOutageFallback_Stale(t *testing.T) {
+	ctx := context.Background()
+	backend := NewMockSubscriptionRepo(&SubscriptionRow{
+		ID: "sub-faulty", PlanID: "plan-1", TenantID: "tenant-f",
+		Status: "active", Amount: "1000", Currency: "usd", Interval: "month",
+	})
+	fc := &faultyCache{}
+	csr := NewCachedSubscriptionRepo(backend, fc, time.Minute)
+
+	// Faulty cache returns errors; should fallback to backend
+	sr, err := csr.FindByIDAndTenant(ctx, "sub-faulty", "tenant-f")
+	if err != nil {
+		t.Fatalf("expected fallback to backend, got error: %v", err)
+	}
+	if sr.ID != "sub-faulty" {
+		t.Fatalf("expected sub-faulty, got %s", sr.ID)
+	}
+}
+
 func TestCachedSubscriptionRepo_InvalidateClearsBothKeys(t *testing.T) {
 	ctx := context.Background()
 	backend := NewMockSubscriptionRepo(&SubscriptionRow{
