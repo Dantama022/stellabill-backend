@@ -47,16 +47,16 @@ func DefaultConfig() Config {
 	}
 }
 
-// JobExecutor defines the interface for executing billing jobs
+// JobExecutor defines the interface for executing jobs
 type JobExecutor interface {
 	Execute(ctx context.Context, job *Job) error
 }
 
-// Worker manages background billing job scheduling and execution
+// Worker manages background job scheduling and execution
 type Worker struct {
 	config   Config
 	store    JobStore
-	executor JobExecutor
+	executors map[string]JobExecutor
 	ctx      context.Context
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
