@@ -3,8 +3,10 @@ package auth
 type Role string
 
 const (
-	RoleAdmin Role = "admin"
-	RoleUser  Role = "user"
+	RoleAdmin    Role = "admin"
+	RoleMerchant Role = "merchant"
+	RoleCustomer Role = "customer"
+	RoleUser     Role = "user"
 )
 
 type Permission string
@@ -22,6 +24,16 @@ var rolePermissions = map[Role][]Permission{
 		PermReadSubscriptions,
 		PermManagePlans,
 		PermManageSubscriptions,
+	},
+	RoleMerchant: {
+		PermReadPlans,
+		PermReadSubscriptions,
+		PermManagePlans,
+		PermManageSubscriptions,
+	},
+	RoleCustomer: {
+		PermReadPlans,
+		PermReadSubscriptions,
 	},
 	RoleUser: {
 		PermReadPlans,

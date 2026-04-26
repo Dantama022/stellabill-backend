@@ -19,18 +19,6 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// Role-based access control roles
-const (
-	RoleAdmin    = "admin"
-	RoleMerchant = "merchant"
-	RoleCustomer = "customer"
-)
-
-// AllRoles returns all valid roles
-func AllRoles() []string {
-	return []string{RoleAdmin, RoleMerchant, RoleCustomer}
-}
-
 // HasRole checks if claims contain the specified role
 // Supports both single-role (Role field) and multi-role (Roles slice) patterns
 func (c *Claims) HasRole(role string) bool {
