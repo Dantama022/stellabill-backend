@@ -8,7 +8,7 @@ info:
 
     Notes:
       - Preflight CORS requests (`OPTIONS`) are handled by middleware and return `204`.
-  version: 0.1.0
+  version: 0.2.0
 servers:
   - url: http://localhost:8080
     description: Local development
@@ -117,6 +117,21 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 components:
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor for pagination
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      description: Maximum number of items to return
+      schema:
+        type: integer
+        default: 10
+        maximum: 100
   schemas:
     Error:
       type: object
@@ -156,6 +171,19 @@ components:
         service:
           type: string
           example: stellarbill-backend
+    Pagination:
+      type: object
+      required: [limit, has_more]
+      properties:
+        next_cursor:
+          type: string
+          example: eyJpZCI6InBsYW5fMiIsInNvcnRfdmFsdWUiOiJQbGFuIDIifQ==
+        limit:
+          type: integer
+          example: 10
+        has_more:
+          type: boolean
+          example: true
     Plan:
       type: object
       additionalProperties: false
@@ -169,7 +197,6 @@ components:
           example: Basic
         amount:
           type: string
-          description: Amount as string (placeholder until DB integration).
           example: "1000"
         currency:
           type: string
@@ -216,7 +243,6 @@ components:
           example: monthly
         next_billing:
           type: string
-          description: Next billing datetime (string placeholder).
           example: "2026-04-01T00:00:00Z"
     SubscriptionsResponse:
       type: object
