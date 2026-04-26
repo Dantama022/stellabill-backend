@@ -85,8 +85,6 @@ type PaginationMetadata struct {
 	PreviousCursor string `json:"previous_cursor,omitempty"`
 	HasMore        bool   `json:"has_more"`
 	TotalCount     int    `json:"total_count,omitempty"`
-	NextCursor string `json:"next_cursor,omitempty"`
-	Limit      int    `json:"limit"`
-	HasMore    bool   `json:"has_more"`
+	Limit          int    `json:"limit"`
 }
 

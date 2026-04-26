@@ -23,7 +23,7 @@ func NewGetStatementHandler(svc service.StatementService) gin.HandlerFunc {
 
 		roles := auth.ExtractRoles(c)
 
-		// 2. Validate :id path param.
+		// Validate :id path param.
 		id := c.Param("id")
 		if strings.TrimSpace(id) == "" {
 			RespondWithValidationError(c, "statement id is required", map[string]interface{}{
@@ -33,7 +33,7 @@ func NewGetStatementHandler(svc service.StatementService) gin.HandlerFunc {
 			return
 		}
 
-		// 3. Call service.
+		// Call service.
 		detail, warnings, err := svc.GetDetail(c.Request.Context(), callerID.(string), rolesToStrings(roles), id)
 		if err != nil {
 			statusCode, code, message := MapServiceErrorToResponse(err)
@@ -41,7 +41,7 @@ func NewGetStatementHandler(svc service.StatementService) gin.HandlerFunc {
 			return
 		}
 
-		// 4. Build response envelope.
+		// Build response envelope.
 		resp := service.ResponseEnvelope{
 			APIVersion: "2025-01-01",
 			Data:       detail,
@@ -65,37 +65,26 @@ func NewListStatementsHandler(svc service.StatementService) gin.HandlerFunc {
 
 		roles := auth.ExtractRoles(c)
 
-		// 2. Build query from optional filters.
+		// Build query from optional filters.
 		q := repository.StatementQuery{
 			SubscriptionID: c.Query("subscription_id"),
 			Kind:           c.Query("kind"),
 			Status:         c.Query("status"),
-			StartAfter:     c.Query("start_after"),
-			EndBefore:      c.Query("end_before"),
-			StartingAfter:  c.Query("starting_after"),
-			EndingBefore:   c.Query("ending_before"),
 			Order:          c.Query("order"),
 		}
 
-		if l := c.Query("limit"); l != "" {
-			if v, err := strconv.Atoi(l); err == nil {
-				q.Limit = v
-			}
-		} else if ps := c.Query("page_size"); ps != "" { // backward compatibility
-			if v, err := strconv.Atoi(ps); err == nil {
-				q.Limit = v
-			}
 		limitStr := c.DefaultQuery("limit", "10")
 		limit, _ := strconv.Atoi(limitStr)
-		if limit <= 0 {
+		if limit <= 0 || limit > 100 {
 			limit = 10
 		}
-		q.PageSize = limit // Reuse PageSize as Limit for now in repo
+		q.Limit = limit
 
-		cursorStr := c.Query("cursor")
-		q.StartAfter = cursorStr // Standardize on StartAfter as the cursor field
+		// Cursor pagination parameters
+		q.StartingAfter = c.Query("starting_after")
+		q.EndingBefore = c.Query("ending_before")
 
-		// 3. Call service.
+		// Call service.
 		customerID := c.Query("customer_id")
 		if customerID == "" {
 			customerID = callerID.(string)
@@ -108,16 +97,15 @@ func NewListStatementsHandler(svc service.StatementService) gin.HandlerFunc {
 			return
 		}
 
-		// 4. Normalise pagination values for response.
-		limit := q.Limit
-		if limit <= 0 {
-			limit = 10
-		// 4. Build response envelope with cursor pagination.
-		// Since we don't have a real cursor implementation in the service yet, we'll simulate.
-		hasMore := count > limit
+		// Build response envelope with cursor pagination.
+		// Deterministic next/prev cursors based on the returned slice.
+		hasMore := len(detail.Statements) >= limit
 		nextCursor := ""
-		if hasMore && len(detail.Statements) > 0 {
+		prevCursor := ""
+		
+		if len(detail.Statements) > 0 {
 			nextCursor = detail.Statements[len(detail.Statements)-1].ID
+			prevCursor = detail.Statements[0].ID
 		}
 
 		resp := service.ResponseEnvelopeWithPagination{
@@ -128,16 +116,15 @@ func NewListStatementsHandler(svc service.StatementService) gin.HandlerFunc {
 			},
 			Pagination: service.PaginationMetadata{
 				TotalCount: count,
-				HasMore:    len(detail.Statements) >= limit,
+				HasMore:    hasMore,
 				NextCursor: nextCursor,
 				Limit:      limit,
-				HasMore:    hasMore,
 			},
 		}
-		// Set next cursor if we have more results. 
-		// In a real app, this would be the ID or IssuedAt of the last item.
-		if resp.Pagination.HasMore && len(detail.Statements) > 0 {
-			resp.Pagination.NextCursor = detail.Statements[len(detail.Statements)-1].ID
+
+		// Custom header for backward pagination if needed
+		if prevCursor != "" {
+			c.Header("X-Prev-Cursor", prevCursor)
 		}
 
 		c.Header("Content-Type", "application/json; charset=utf-8")
