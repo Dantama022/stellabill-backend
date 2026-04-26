@@ -10,15 +10,19 @@ import (
 
 	"database/sql"
 
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+	"stellarbill-backend/internal/audit"
 	"stellarbill-backend/internal/config"
 	"stellarbill-backend/internal/handlers"
 	"stellarbill-backend/internal/routes"
 	"stellarbill-backend/internal/security"
-	"stellarbill-backend/internal/services"
+	"stellarbill-backend/internal/service"
 	"stellarbill-backend/internal/shutdown"
 	"stellarbill-backend/internal/startup"
-
-	"github.com/gin-gonic/gin"
+	applogger "stellarbill-backend/internal/logger"
+)
+	"stellarbill-backend/internal/logger"
 )
 
 var listenAndServe = func(srv *http.Server) error {
@@ -50,7 +54,7 @@ func main() {
 	// -------------------------------
 	router := gin.New()
 	router.Use(gin.Recovery())
-	router.Use(middleware.Logger(logger))
+	router.Use(middleware.RequestLogger())
 
 	// Security headers
 	router.Use(func(c *gin.Context) {
@@ -60,9 +64,9 @@ func main() {
 		c.Next()
 	})
 
-	// Services & routes
-	planSvc := services.NewPlanService()
-	subSvc := services.NewSubscriptionService()
+	// Wire up services and handlers, then register routes
+	planSvc := service.NewPlanService()
+	subSvc := service.NewSubscriptionService()
 	h := handlers.NewHandler(planSvc, subSvc)
 	routes.Register(router, h)
 
@@ -134,10 +138,33 @@ func main() {
 		}
 	}()
 
-	// -------------------------------
-	// WAIT FOR SHUTDOWN
-	// -------------------------------
-	gs.ListenForShutdownSignals()
+	// Start signal listener (blocks until shutdown is triggered)
+	go gracefulShutdown.ListenForShutdownSignals()
+
+	// Wait for either a server error or shutdown completion
+	select {
+	case err := <-serverErrors:
+		log.Fatalf("Server error: %v", err)
+	case <-func() <-chan struct{} {
+		// Wait for graceful shutdown to complete
+		done := make(chan struct{})
+		go func() {
+			gracefulShutdown.Wait()
+			close(done)
+		}()
+		return done
+	}():
+		log.Println("Server shutdown completed successfully")
+	}
+
+	applogger.Init()
+
+	r := gin.New()
+
+	r.Use(middleware.RecoveryLogger())
+	r.Use(middleware.RequestLogger())
+
+	var db *sql.DB = nil // existing or future DB
 
 	logger.Info("Server exited cleanly")
 }
