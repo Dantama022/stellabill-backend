@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"time"
 
 	"stellarbill-backend/internal/security"
 
 	"github.com/google/uuid"
+	"stellarbill-backend/internal/structuredlog"
 )
 
 // Service provides the main outbox functionality

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"stellabill-backend/internal/structuredlog"
 )
 
 const (

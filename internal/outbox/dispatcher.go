@@ -29,6 +29,7 @@ func DefaultDispatcherConfig() DispatcherConfig {
 		BatchSize:          10,
 		MaxRetries:         3,
 		RetryBackoffFactor: 2.0,
+		FailureLogWindow:   30 * time.Second,
 		CleanupInterval:    1 * time.Hour,
 		CompletedEventTTL:  24 * time.Hour,
 		ProcessingTimeout:  30 * time.Second,
@@ -50,10 +51,16 @@ type dispatcher struct {
 
 // NewDispatcher creates a new outbox dispatcher
 func NewDispatcher(repository Repository, publisher Publisher, config DispatcherConfig) Dispatcher {
+	if config.FailureLogWindow <= 0 {
+		config.FailureLogWindow = 30 * time.Second
+	}
 	return &dispatcher{
 		repository: repository,
 		publisher:  publisher,
 		config:     config,
+		logger:     defaultLogger,
+		throttler:  structuredlog.NewThrottler(config.FailureLogWindow),
+		now:        time.Now,
 	}
 }
 
@@ -141,6 +148,7 @@ func (d *dispatcher) cleanupLoop() {
 
 // processPendingEvents processes a batch of pending events
 func (d *dispatcher) processPendingEvents() {
+	started := d.now()
 	events, err := d.repository.GetPendingEvents(d.config.BatchSize)
 	if err != nil {
 		log.Printf("%s", security.MaskPII(fmt.Sprintf("Failed to get pending events: %v", err)))
@@ -242,6 +250,7 @@ func (d *dispatcher) cleanupCompletedEvents() {
 	if deleted > 0 {
 		log.Printf("%s", security.MaskPII(fmt.Sprintf("Cleaned up %d completed events older than %v", deleted, cutoff)))
 	}
+	d.logger.Warn(message, fields)
 }
 
 // TimeoutError represents a processing timeout error
