@@ -3,9 +3,11 @@ package outbox
 import (
 	"database/sql"
 	"fmt"
-	"time"
+	"log"
 
 	"stellarbill-backend/internal/config"
+	"stellarbill-backend/internal/logger"
+	"stellarbill-backend/internal/security"
 )
 
 // Manager handles the outbox system lifecycle
@@ -16,20 +18,23 @@ type Manager struct {
 
 // NewManager creates a new outbox manager
 func NewManager(db *sql.DB, cfg config.Config) (*Manager, error) {
-	// Convert config to outbox service config
+	// Convert config to outbox service config.
+	// The current app config does not expose an Outbox section, so use dispatcher defaults.
+	dispatcherDefaults := DefaultDispatcherConfig()
 	serviceConfig := ServiceConfig{
 		DispatcherConfig: DispatcherConfig{
-			PollInterval:       cfg.Outbox.GetPollInterval(),
-			BatchSize:          cfg.Outbox.BatchSize,
-			MaxRetries:         cfg.Outbox.MaxRetries,
-			RetryBackoffFactor: cfg.Outbox.RetryBackoffFactor,
-			CleanupInterval:    cfg.Outbox.GetCleanupInterval(),
-			CompletedEventTTL:  cfg.Outbox.GetCompletedEventTTL(),
-			ProcessingTimeout:  cfg.Outbox.GetProcessingTimeout(),
+			PollInterval:       dispatcherDefaults.PollInterval,
+			BatchSize:          dispatcherDefaults.BatchSize,
+			MaxRetries:         dispatcherDefaults.MaxRetries,
+			RetryBackoffFactor: dispatcherDefaults.RetryBackoffFactor,
+			CleanupInterval:    dispatcherDefaults.CleanupInterval,
+			CompletedEventTTL:  dispatcherDefaults.CompletedEventTTL,
+			ProcessingTimeout:  dispatcherDefaults.ProcessingTimeout,
 		},
-		PublisherType: cfg.Outbox.PublisherType,
-		HTTPEndpoint:  cfg.Outbox.HTTPEndpoint,
+		PublisherType: "console",
+		HTTPEndpoint:  "",
 	}
+	_ = cfg
 
 	service, err := NewService(db, serviceConfig)
 	if err != nil {
@@ -44,7 +49,7 @@ func NewManager(db *sql.DB, cfg config.Config) (*Manager, error) {
 
 // Start starts the outbox system
 func (m *Manager) Start() error {
-	defaultLogger.Info("starting outbox manager", outboxFields("outbox.manager", "starting"))
+	logger.SafePrintf("Starting outbox manager...")
 	
 	// Run database migrations
 	if err := m.runMigrations(); err != nil {
@@ -56,19 +61,19 @@ func (m *Manager) Start() error {
 		return fmt.Errorf("failed to start outbox service: %w", err)
 	}
 	
-	defaultLogger.Info("outbox manager started", outboxFields("outbox.manager", "started"))
+	logger.SafePrintf("Outbox manager started successfully")
 	return nil
 }
 
 // Stop stops the outbox system
 func (m *Manager) Stop() error {
-	defaultLogger.Info("stopping outbox manager", outboxFields("outbox.manager", "stopping"))
+	logger.SafePrintf("Stopping outbox manager...")
 	
 	if err := m.service.Stop(); err != nil {
 		return fmt.Errorf("failed to stop outbox service: %w", err)
 	}
 	
-	defaultLogger.Info("outbox manager stopped", outboxFields("outbox.manager", "stopped"))
+	logger.SafePrintf("Outbox manager stopped")
 	return nil
 }
 
@@ -89,7 +94,7 @@ func (m *Manager) Health() error {
 
 // runMigrations runs the necessary database migrations
 func (m *Manager) runMigrations() error {
-	defaultLogger.Info("running outbox migrations", outboxFields("outbox.manager.migrations", "running"))
+	logger.SafePrintf("Running outbox migrations...")
 	
 	// Check if outbox table exists
 	var exists bool
@@ -105,7 +110,7 @@ func (m *Manager) runMigrations() error {
 	}
 	
 	if !exists {
-		defaultLogger.Info("creating outbox table", outboxFields("outbox.manager.migrations", "creating"))
+		logger.SafePrintf("Creating outbox table...")
 		if err := m.createOutboxTable(); err != nil {
 			return fmt.Errorf("failed to create outbox table: %w", err)
 		}
@@ -161,7 +166,7 @@ func (m *Manager) createOutboxTable() error {
 		return fmt.Errorf("failed to create outbox table: %w", err)
 	}
 	
-	defaultLogger.Info("outbox table created", outboxFields("outbox.manager.migrations", "created"))
+	logger.SafePrintf("Outbox table created successfully")
 	return nil
 }
 

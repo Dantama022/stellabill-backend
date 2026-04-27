@@ -1,10 +1,16 @@
 package outbox
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net/http"
+	"net/url"
+	"time"
 
-	"stellarbill-backend/internal/structuredlog"
+	"stellarbill-backend/internal/security"
 )
 
 // HTTPPublisher publishes events via HTTP (placeholder implementation)
@@ -15,25 +21,57 @@ type HTTPPublisher struct {
 
 // HTTPClient interface for HTTP operations (allows for mocking)
 type HTTPClient interface {
-	Post(url string, contentType string, body []byte) (int, error)
+	Post(url string, contentType string, body []byte, idempotencyKey string) (int, error)
 }
 
-// DefaultHTTPClient is a simple HTTP client implementation
+// DefaultHTTPClient is a simple HTTP client implementation (mock)
 type DefaultHTTPClient struct{}
 
 func (c *DefaultHTTPClient) Post(url string, contentType string, body []byte) (int, error) {
-	defaultLogger.Info("publishing outbox event over HTTP", structuredlog.Fields{
-		structuredlog.FieldRequestID: "",
-		structuredlog.FieldActor:     "system",
-		structuredlog.FieldTenant:    "system",
-		structuredlog.FieldRoute:     "outbox.publisher.http",
-		structuredlog.FieldStatus:    "attempt",
-		structuredlog.FieldDuration:  0,
-		"endpoint":                   url,
-		"content_type":               contentType,
-		"payload_bytes":              len(body),
-	})
+	// This is a placeholder implementation
+	// In a real implementation, you would use http.Client
+	log.Printf("Would send POST to %s with content-type %s and body: %s", 
+		security.MaskPII(url), 
+		contentType, 
+		security.MaskPII(string(body)))
 	return 200, nil
+}
+
+// RealHTTPClient is an actual HTTP client using the resilient wrapper
+type RealHTTPClient struct {
+	client *httpclient.Client
+}
+
+// NewRealHTTPClient creates a resilient real HTTP client
+func NewRealHTTPClient(endpoint string, logger *zap.Logger) *RealHTTPClient {
+	u, _ := url.Parse(endpoint)
+	host := "unknown"
+	if u != nil && u.Host != "" {
+		host = u.Host
+	}
+	return &RealHTTPClient{
+		client: httpclient.NewClient(host, logger),
+	}
+}
+
+func (c *RealHTTPClient) Post(endpoint string, contentType string, body []byte, idempotencyKey string) (int, error) {
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewBuffer(body))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", contentType)
+	if idempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", idempotencyKey)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	if resp.Body != nil {
+		resp.Body.Close()
+	}
+	return resp.StatusCode, nil
 }
 
 // NewHTTPPublisher creates a new HTTP publisher
@@ -66,7 +104,7 @@ func (p *HTTPPublisher) Publish(event *Event) error {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	statusCode, err := p.client.Post(p.endpoint, "application/json", body)
+	statusCode, err := p.client.Post(p.endpoint, "application/json", body, event.ID)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -93,18 +131,14 @@ func (p *ConsolePublisher) Publish(event *Event) error {
 		return fmt.Errorf("failed to unmarshal event data: %w", err)
 	}
 
-	defaultLogger.Info("publishing outbox event to console", structuredlog.Fields{
-		structuredlog.FieldRequestID: "",
-		structuredlog.FieldActor:     "system",
-		structuredlog.FieldTenant:    "system",
-		structuredlog.FieldRoute:     "outbox.publisher.console",
-		structuredlog.FieldStatus:    "attempt",
-		structuredlog.FieldDuration:  0,
-		"event_id":                   event.ID.String(),
-		"event_type":                 event.EventType,
-		"aggregate_id":               safeString(event.AggregateID),
-		"aggregate_type":             safeString(event.AggregateType),
-	})
+	msg := fmt.Sprintf("Publishing event: ID=%s, Type=%s, Data=%+v, AggregateID=%s, AggregateType=%s",
+		security.MaskPII(event.ID),
+		event.EventType,
+		eventData.Data,
+		safeString(event.AggregateID),
+		safeString(event.AggregateType),
+	)
+	log.Printf("%s", security.MaskPII(msg))
 
 	return nil
 }
@@ -126,18 +160,7 @@ func (p *MultiPublisher) Publish(event *Event) error {
 	for i, publisher := range p.publishers {
 		if err := publisher.Publish(event); err != nil {
 			lastError = fmt.Errorf("publisher %d failed: %w", i, err)
-			defaultLogger.Warn("one outbox publisher failed", structuredlog.Fields{
-				structuredlog.FieldRequestID: "",
-				structuredlog.FieldActor:     "system",
-				structuredlog.FieldTenant:    "system",
-				structuredlog.FieldRoute:     "outbox.publisher.multi",
-				structuredlog.FieldStatus:    "publisher_failed",
-				structuredlog.FieldDuration:  0,
-				"publisher_index":            i,
-				"event_id":                   event.ID.String(),
-				"event_type":                 event.EventType,
-				"error":                      err,
-			})
+			log.Printf("Publisher %d failed: %v", i, security.RedactError(err))
 		}
 	}
 	
