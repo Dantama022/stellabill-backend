@@ -157,7 +157,7 @@ func TestJWTMiddleware(t *testing.T) {
 			signingMethod = jwt.SigningMethodHS512
 		}
 
-		claims := Claims{
+		claims := JWTClaims{
 			UserID: userID,
 			RegisteredClaims: jwt.RegisteredClaims{
 				ExpiresAt: jwt.NewNumericDate(exp),

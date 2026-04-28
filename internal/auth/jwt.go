@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v2/jwk"
 )
 
 type contextKey string
@@ -27,9 +28,20 @@ type Config struct {
 	Secret       []byte
 	Issuer       string
 	Audience     string
-	ClockSkewSec int64  // Maximum allowed clock skew in seconds (default 0, recommended <= 60)
-	MaxTokenAge  int64  // Maximum age of token in seconds (additional check beyond exp)
-	Algorithm    string // Expected algorithm (default "HS256")
+	ClockSkewSec int64      // Maximum allowed clock skew in seconds (default 0, recommended <= 60)
+	MaxTokenAge  int64      // Maximum age of token in seconds (additional check beyond exp)
+	Algorithm    string     // Expected algorithm (default "HS256")
+	JWKS         *JWKSCache // Optional JWKS cache for public key validation
+}
+
+// JWTClaims represents our custom JWT structure.
+type JWTClaims struct {
+	UserID     string   `json:"user_id"`
+	Email      string   `json:"email,omitempty"`
+	Role       string   `json:"role,omitempty"`
+	Roles      []string `json:"roles,omitempty"`
+	MerchantID string   `json:"merchant_id,omitempty"`
+	jwt.RegisteredClaims
 }
 
 // ValidateConfig performs security checks on JWT configuration
@@ -82,20 +94,36 @@ func JWTMiddleware(cfg Config) func(http.Handler) http.Handler {
 				respondWithError(w, http.StatusUnauthorized, "invalid authorization format")
 				return
 			}
-
-			tokenString := parts[1]
-			if tokenString == "" {
-				respondWithError(w, http.StatusUnauthorized, "token string cannot be empty")
+			if strings.TrimSpace(parts[1]) == "" {
+				respondWithError(w, http.StatusUnauthorized, "invalid authorization format")
 				return
 			}
 
-			claims := &Claims{}
+			tokenString := parts[1]
+			claims := &JWTClaims{}
 
 			// Parse with custom claims validation
 			token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
 				// Explicitly validate algorithm to prevent algorithm confusion attacks
 				if t.Method.Alg() != cfg.Algorithm {
 					return nil, fmt.Errorf("unexpected algorithm: expected %s, got %s", cfg.Algorithm, t.Method.Alg())
+				}
+
+				// If JWKS is configured, use it to get the public key
+				if cfg.JWKS != nil {
+					kid, ok := t.Header["kid"].(string)
+					if !ok {
+						return nil, errors.New("missing kid in token header")
+					}
+					key, err := cfg.JWKS.GetKey(r.Context(), kid)
+					if err != nil {
+						return nil, fmt.Errorf("failed to retrieve public key: %w", err)
+					}
+					var rawKey interface{}
+					if err := key.Raw(&rawKey); err != nil {
+						return nil, fmt.Errorf("failed to get raw key: %w", err)
+					}
+					return rawKey, nil
 				}
 
 				// Ensure only HMAC is used (or whatever was configured)
@@ -156,12 +184,32 @@ func GinJWTMiddleware(cfg Config) func(*gin.Context) {
 			return
 		}
 
-		claims := &Claims{}
+		claims := &JWTClaims{}
 
 		token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
+			// Explicitly validate algorithm
 			if t.Method.Alg() != cfg.Algorithm {
 				return nil, fmt.Errorf("unexpected algorithm: expected %s, got %s", cfg.Algorithm, t.Method.Alg())
 			}
+
+			// If JWKS is configured, use it to get the public key
+			if cfg.JWKS != nil {
+				kid, ok := t.Header["kid"].(string)
+				if !ok {
+					return nil, errors.New("missing kid in token header")
+				}
+				key, err := cfg.JWKS.GetKey(c.Request.Context(), kid)
+				if err != nil {
+					return nil, fmt.Errorf("failed to retrieve public key: %w", err)
+				}
+				var rawKey interface{}
+				if err := key.Raw(&rawKey); err != nil {
+					return nil, fmt.Errorf("failed to get raw key: %w", err)
+				}
+				return rawKey, nil
+			}
+
+			// Fallback to static secret (HMAC)
 			return cfg.Secret, nil
 		})
 
@@ -198,7 +246,7 @@ func GinJWTMiddleware(cfg Config) func(*gin.Context) {
 }
 
 // validateClaimsStrict performs strict validation of JWT claims
-func validateClaimsStrict(claims *Claims, cfg Config) error {
+func validateClaimsStrict(claims *JWTClaims, cfg Config) error {
 	now := time.Now()
 
 	// Validate Issuer (required and must match exactly)
@@ -245,7 +293,6 @@ func validateClaimsStrict(claims *Claims, cfg Config) error {
 	return nil
 }
 
-
 // GetPrincipal safely extracts the user ID from the context in downstream handlers
 func GetPrincipal(ctx context.Context) (string, bool) {
 	val, ok := ctx.Value(PrincipalKey).(string)
@@ -271,4 +318,56 @@ func stringInSlice(a string, list []string) bool {
 		}
 	}
 	return false
+}
+
+// TokenGenerator creates JWT tokens for testing and internal use.
+type TokenGenerator struct {
+	secret []byte
+	issuer string
+}
+
+// NewTokenGenerator creates a new token generator.
+func NewTokenGenerator(secret string) *TokenGenerator {
+	return &TokenGenerator{
+		secret: []byte(secret),
+		issuer: "stellarbill-backend",
+	}
+}
+
+// generateToken creates a token with given claims.
+func (tg *TokenGenerator) generateToken(userID, email, role string, expiresAt time.Time) (string, error) {
+	claims := JWTClaims{
+		UserID: userID,
+		Email:  email,
+		Role:   role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    tg.issuer,
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Subject:   userID,
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(tg.secret)
+}
+
+// GenerateAdminToken creates an admin token valid for 24h.
+func (tg *TokenGenerator) GenerateAdminToken(userID, email string) (string, error) {
+	return tg.generateToken(userID, email, string(RoleAdmin), time.Now().Add(24*time.Hour))
+}
+
+// GenerateMerchantToken creates a merchant token.
+func (tg *TokenGenerator) GenerateMerchantToken(userID, email, merchantID string) (string, error) {
+	_ = merchantID // could embed as custom claim if needed
+	return tg.generateToken(userID, email, string(RoleMerchant), time.Now().Add(24*time.Hour))
+}
+
+// GenerateCustomerToken creates a customer token.
+func (tg *TokenGenerator) GenerateCustomerToken(userID, email string) (string, error) {
+	return tg.generateToken(userID, email, string(RoleCustomer), time.Now().Add(24*time.Hour))
+}
+
+// GenerateExpiredToken creates a token that is already expired.
+func (tg *TokenGenerator) GenerateExpiredToken(userID, email string, role Role) (string, error) {
+	return tg.generateToken(userID, email, string(role), time.Now().Add(-1*time.Hour))
 }
