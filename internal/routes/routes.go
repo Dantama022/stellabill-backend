@@ -78,73 +78,80 @@ func Register(r *gin.Engine) {
 	dep := middleware.DeprecationHeaders()
 
 	api.Use(idempotency.Middleware(store))
-	v1.Use(middleware.AuthMiddleware(jwtSecret))
-	{
-		// Public health check - no authentication required
-		api.GET("/health", dep, handlers.Health)
-		v1.GET("/health", handlers.Health)
 
-		// Public read (user + admin)
-		api.GET("/plans",
+	// Public health check
+	api.GET("/health", dep, handlers.Health)
+	v1.GET("/health", handlers.Health)
+
+	// Protected routes group
+	authMiddleware := middleware.AuthMiddleware(jwtSecret)
+
+	// V1 routes are all protected
+	v1.Use(authMiddleware)
+	{
+		v1.GET("/subscriptions", handlers.ListSubscriptions)
+		v1.GET("/subscriptions/:id", handlers.NewGetSubscriptionHandler(svc))
+		v1.GET("/plans", handlers.ListPlans)
+		v1.GET("/statements/:id", handlers.NewGetStatementHandler(stmtSvc))
+		v1.GET("/statements", handlers.NewListStatementsHandler(stmtSvc))
+	}
+
+	// Legacy /api routes - also protected
+	apiProtected := api.Group("")
+	apiProtected.Use(authMiddleware)
+	{
+		apiProtected.GET("/plans",
 			dep,
 			auth.RequirePermission(auth.PermReadPlans),
 			handlers.ListPlans,
 		)
 
-		api.GET("/subscriptions",
+		apiProtected.GET("/subscriptions",
 			dep,
 			auth.RequirePermission(auth.PermReadSubscriptions),
 			handlers.ListSubscriptions,
 		)
 
-		api.GET("/subscriptions/:id",
+		apiProtected.GET("/subscriptions/:id",
 			dep,
 			auth.RequirePermission(auth.PermReadSubscriptions),
 			handlers.GetSubscription,
 		)
 
-		// Example future admin-only endpoints:
-		// api.POST("/plans", auth.RequirePermission(auth.PermManagePlans), ...)
-		api.GET("/subscriptions", dep, handlers.ListSubscriptions)
-		v1.GET("/subscriptions", handlers.ListSubscriptions)
-		api.GET("/subscriptions/:id", dep, middleware.AuthMiddleware(jwtSecret), handlers.NewGetSubscriptionHandler(svc))
-		v1.GET("/subscriptions/:id", middleware.AuthMiddleware(jwtSecret), handlers.NewGetSubscriptionHandler(svc))
-		api.GET("/plans", dep, handlers.ListPlans)
-		v1.GET("/plans", handlers.ListPlans)
+		apiProtected.GET("/statements/:id", handlers.NewGetStatementHandler(stmtSvc))
+		apiProtected.GET("/statements", handlers.NewListStatementsHandler(stmtSvc))
+	}
 
-			api.GET("/statements/:id", middleware.AuthMiddleware(jwtSecret), handlers.NewGetStatementHandler(stmtSvc))
-		api.GET("/statements", middleware.AuthMiddleware(jwtSecret), handlers.NewListStatementsHandler(stmtSvc))
-
-		admin := api.Group("/admin")
-		{
-			admin.POST("/purge", adminHandler.PurgeCache)
-			// Diagnostics endpoint — re-runs startup checks for live triage
-			diagHandler := startup.NewDiagnosticsHandler(cfg, nil, nil)
-			admin.GET("/diagnostics", auth.RequirePermission(auth.PermManageSubscriptions), diagHandler.Handle)
-			// Reconciliation endpoint (admin-only) - accepts backend subscription list
-				// Choose adapter implementation via env var CONTRACT_SNAPSHOT_URL. If set, use HTTPAdapter.
-				contractURL := os.Getenv("CONTRACT_SNAPSHOT_URL")
-				var adapter reconciliation.Adapter
-				if contractURL != "" {
-					// Optional auth header via CONTRACT_SNAPSHOT_AUTH (e.g. "Bearer <token>")
-					authHeader := os.Getenv("CONTRACT_SNAPSHOT_AUTH")
-					adapter = reconciliation.NewHTTPAdapter(contractURL, authHeader)
-				} else {
-					// Default to in-memory adapter (empty) — replace or seed as needed in dev.
-					adapter = reconciliation.NewMemoryAdapter()
-				}
-				// Wire in-memory store for persistence by default; can be swapped for DB-backed store.
-				reconStore := reconciliation.NewMemoryStore()
-				admin.POST("/reconcile", auth.RequirePermission(auth.PermManageSubscriptions), handlers.NewReconcileHandler(adapter, reconStore))
-				// List persisted reports
-				admin.GET("/reports", auth.RequirePermission(auth.PermManageSubscriptions), func(c *gin.Context) {
-					reports, err := reconStore.ListReports()
-					if err != nil {
-						c.JSON(500, gin.H{"error": "failed to load reports"})
-						return
-					}
-					c.JSON(200, gin.H{"reports": reports})
-				})
+	admin := api.Group("/admin")
+	admin.Use(authMiddleware)
+	{
+		admin.POST("/purge", adminHandler.PurgeCache)
+		// Diagnostics endpoint — re-runs startup checks for live triage
+		diagHandler := startup.NewDiagnosticsHandler(cfg, nil, nil)
+		admin.GET("/diagnostics", auth.RequirePermission(auth.PermManageSubscriptions), diagHandler.Handle)
+		// Reconciliation endpoint (admin-only) - accepts backend subscription list
+		// Choose adapter implementation via env var CONTRACT_SNAPSHOT_URL. If set, use HTTPAdapter.
+		contractURL := os.Getenv("CONTRACT_SNAPSHOT_URL")
+		var adapter reconciliation.Adapter
+		if contractURL != "" {
+			// Optional auth header via CONTRACT_SNAPSHOT_AUTH (e.g. "Bearer <token>")
+			authHeader := os.Getenv("CONTRACT_SNAPSHOT_AUTH")
+			adapter = reconciliation.NewHTTPAdapter(contractURL, authHeader)
+		} else {
+			// Default to in-memory adapter (empty) — replace or seed as needed in dev.
+			adapter = reconciliation.NewMemoryAdapter()
 		}
+		// Wire in-memory store for persistence by default; can be swapped for DB-backed store.
+		reconStore := reconciliation.NewMemoryStore()
+		admin.POST("/reconcile", auth.RequirePermission(auth.PermManageSubscriptions), handlers.NewReconcileHandler(adapter, reconStore))
+		// List persisted reports
+		admin.GET("/reports", auth.RequirePermission(auth.PermManageSubscriptions), func(c *gin.Context) {
+			reports, err := reconStore.ListReports()
+			if err != nil {
+				c.JSON(500, gin.H{"error": "failed to load reports"})
+				return
+			}
+			c.JSON(200, gin.H{"reports": reports})
+		})
 	}
 }

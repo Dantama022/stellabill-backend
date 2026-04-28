@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -58,12 +59,6 @@ func (c *Config) ValidateConfig() error {
 		return errors.New("max token age cannot be negative")
 	}
 	return nil
-}
-
-// Claims represents our custom JWT structure
-type Claims struct {
-	UserID string `json:"user_id"`
-	jwt.RegisteredClaims
 }
 
 // JWTMiddleware creates a middleware verifying tokens against the provided config
@@ -136,6 +131,72 @@ func JWTMiddleware(cfg Config) func(http.Handler) http.Handler {
 	}
 }
 
+// GinJWTMiddleware creates a Gin-compatible middleware verifying tokens
+func GinJWTMiddleware(cfg Config) func(*gin.Context) {
+	if err := cfg.ValidateConfig(); err != nil {
+		panic(fmt.Sprintf("invalid JWT config: %v", err))
+	}
+
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			respondWithErrorGin(c, http.StatusUnauthorized, "missing authorization header")
+			return
+		}
+
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+			respondWithErrorGin(c, http.StatusUnauthorized, "invalid authorization format")
+			return
+		}
+
+		tokenString := parts[1]
+		if tokenString == "" {
+			respondWithErrorGin(c, http.StatusUnauthorized, "token string cannot be empty")
+			return
+		}
+
+		claims := &Claims{}
+
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
+			if t.Method.Alg() != cfg.Algorithm {
+				return nil, fmt.Errorf("unexpected algorithm: expected %s, got %s", cfg.Algorithm, t.Method.Alg())
+			}
+			return cfg.Secret, nil
+		})
+
+		if err != nil {
+			respondWithErrorGin(c, http.StatusUnauthorized, fmt.Sprintf("token parsing failed: %v", err))
+			return
+		}
+
+		if !token.Valid {
+			respondWithErrorGin(c, http.StatusUnauthorized, "token is not valid")
+			return
+		}
+
+		if err := validateClaimsStrict(claims, cfg); err != nil {
+			respondWithErrorGin(c, http.StatusUnauthorized, err.Error())
+			return
+		}
+
+		// Set common context keys for Gin
+		c.Set(string(PrincipalKey), claims.UserID)
+		c.Set("user_id", claims.UserID)
+		c.Set("callerID", claims.UserID) // For backward compatibility
+		c.Set("merchant_id", claims.MerchantID)
+		c.Set("tenantID", claims.MerchantID) // For backward compatibility
+		c.Set(RoleContextKey, string(claims.Role))
+		c.Set("claims", claims)
+
+		// Also set in request context for compatibility with GetPrincipal(context.Context)
+		ctx := context.WithValue(c.Request.Context(), PrincipalKey, claims.UserID)
+		c.Request = c.Request.WithContext(ctx)
+
+		c.Next()
+	}
+}
+
 // validateClaimsStrict performs strict validation of JWT claims
 func validateClaimsStrict(claims *Claims, cfg Config) error {
 	now := time.Now()
@@ -196,6 +257,11 @@ func respondWithError(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(ErrorResponse{Error: msg})
+}
+
+// respondWithErrorGin ensures standardized JSON output for Gin-based auth failures
+func respondWithErrorGin(c *gin.Context, code int, msg string) {
+	c.AbortWithStatusJSON(code, ErrorResponse{Error: msg})
 }
 
 func stringInSlice(a string, list []string) bool {

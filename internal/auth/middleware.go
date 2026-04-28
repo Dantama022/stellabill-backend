@@ -11,19 +11,14 @@ const RoleContextKey = "role"
 // Extract role from JWT claims in request context
 // Previously relied on header-based role extraction; now uses validated JWT claims
 func ExtractRole(c *gin.Context) Role {
-	// First try to get from context (set by JWT middleware)
+	// Only get from context (set by hardened JWT middleware)
 	if role, exists := c.Get(RoleContextKey); exists {
 		if roleStr, ok := role.(string); ok {
 			return Role(roleStr)
 		}
 	}
 
-	// Fallback to header for backwards compatibility (should be removed)
-	role := c.GetHeader("X-Role")
-	if role == "" {
-		return ""
-	}
-	return Role(role)
+	return ""
 }
 
 // RequirePermission middleware enforces role-based access control
