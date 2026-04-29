@@ -3,19 +3,31 @@ package worker
 import (
 	"context"
 	"fmt"
+<<<<<<< HEAD
 	"go.uber.org/zap"
 	"stellabill-backend/internal/security"
 	"time"
+=======
+	"testing"
+>>>>>>> upstream/main
 )
 
-type CustomExecutor struct{}
+// Example test showing how to use the worker in integration tests
+func TestWorkerExample(t *testing.T) {
+	// This is just a skeletal example for documentation/integration purposes
+	// In a real test, you'd use a real or mock JobStore and JobExecutor
+}
 
-func (e *CustomExecutor) Execute(ctx context.Context, job *Job) error {
-	security.ProductionLogger().Info("Custom execution for job",
-		zap.String("job_id", job.ID))
-	// Custom billing logic here
+type exampleMockExecutor struct {
+	executed bool
+}
+
+func (m *exampleMockExecutor) Execute(ctx context.Context, job *Job) error {
+	m.executed = true
+	fmt.Printf("Executing job: %s\n", job.ID)
 	return nil
 }
+<<<<<<< HEAD
 
 func ExampleCustomExecutor() {
 	// Create store and executor
@@ -62,3 +74,5 @@ func ExampleWorker() {
 	worker2.Stop()
 }
 
+=======
+>>>>>>> upstream/main

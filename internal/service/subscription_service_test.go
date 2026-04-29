@@ -228,6 +228,7 @@ func TestGetDetail_CrossTenantPrevention(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
 func TestGetDetail_AdminBypass(t *testing.T) {
 	sub := &repository.SubscriptionRow{
 		ID:         "sub-admin-test",
@@ -239,10 +240,32 @@ func TestGetDetail_AdminBypass(t *testing.T) {
 		Currency:   "USD",
 		Interval:   "month",
 		DeletedAt:  nil,
+=======
+func TestGetDetail_NormalizesNextBillingToUTC(t *testing.T) {
+	plan := &repository.PlanRow{
+		ID:          "plan-utc",
+		Name:        "UTC Plan",
+		Amount:      "1999",
+		Currency:    "usd",
+		Interval:    "month",
+		Description: "UTC plan",
+	}
+	sub := &repository.SubscriptionRow{
+		ID:          "sub-utc",
+		PlanID:      "plan-utc",
+		TenantID:    "tenant-utc",
+		CustomerID:  "cust-utc",
+		Status:      "active",
+		Amount:      "1999",
+		Currency:    "usd",
+		Interval:    "month",
+		NextBilling: "2026-04-23T10:30:00+02:00",
+>>>>>>> upstream/main
 	}
 
 	svc := service.NewSubscriptionService(
 		repository.NewMockSubscriptionRepo(sub),
+<<<<<<< HEAD
 		repository.NewMockPlanRepo(),
 	)
 
@@ -250,5 +273,19 @@ func TestGetDetail_AdminBypass(t *testing.T) {
 	_, _, err := svc.GetDetail(context.Background(), "tenant-1", "admin-someone", "sub-admin-test", true)
 	if err != nil {
 		t.Errorf("expected admin to bypass ownership check, got error: %v", err)
+=======
+		repository.NewMockPlanRepo(plan),
+	)
+
+	detail, _, err := svc.GetDetail(context.Background(), "tenant-utc", "cust-utc", "sub-utc")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if detail.BillingSummary.NextBillingDate == nil {
+		t.Fatal("expected next_billing_date")
+	}
+	if *detail.BillingSummary.NextBillingDate != "2026-04-23T08:30:00Z" {
+		t.Fatalf("unexpected normalized next_billing_date: %s", *detail.BillingSummary.NextBillingDate)
+>>>>>>> upstream/main
 	}
 }

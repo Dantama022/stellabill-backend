@@ -3,6 +3,8 @@ package worker
 import (
 	"fmt"
 	"time"
+
+	"stellarbill-backend/internal/timeutil"
 )
 
 // Scheduler provides utilities for creating and scheduling billing jobs
@@ -22,7 +24,7 @@ func (s *Scheduler) ScheduleCharge(subscriptionID string, scheduledAt time.Time,
 		SubscriptionID: subscriptionID,
 		Type:           "charge",
 		Status:         JobStatusPending,
-		ScheduledAt:    scheduledAt,
+		ScheduledAt:    timeutil.NormalizeUTC(scheduledAt),
 		MaxAttempts:    maxAttempts,
 		Attempts:       0,
 	}
@@ -41,7 +43,7 @@ func (s *Scheduler) ScheduleInvoice(subscriptionID string, scheduledAt time.Time
 		SubscriptionID: subscriptionID,
 		Type:           "invoice",
 		Status:         JobStatusPending,
-		ScheduledAt:    scheduledAt,
+		ScheduledAt:    timeutil.NormalizeUTC(scheduledAt),
 		MaxAttempts:    maxAttempts,
 		Attempts:       0,
 	}
@@ -60,7 +62,7 @@ func (s *Scheduler) ScheduleReminder(subscriptionID string, scheduledAt time.Tim
 		SubscriptionID: subscriptionID,
 		Type:           "reminder",
 		Status:         JobStatusPending,
-		ScheduledAt:    scheduledAt,
+		ScheduledAt:    timeutil.NormalizeUTC(scheduledAt),
 		MaxAttempts:    maxAttempts,
 		Attempts:       0,
 	}
@@ -73,6 +75,5 @@ func (s *Scheduler) ScheduleReminder(subscriptionID string, scheduledAt time.Tim
 }
 
 func generateJobID(jobType string) string {
-	return fmt.Sprintf("%s-%d", jobType, time.Now().UnixNano())
+	return fmt.Sprintf("%s-%d", jobType, timeutil.NowUTC().UnixNano())
 }
-

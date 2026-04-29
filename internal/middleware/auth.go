@@ -2,30 +2,34 @@ package middleware
 
 import (
 	"net/http"
+	"os"
 	"strings"
 
+	"stellarbill-backend/internal/auth"
+
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"stellabill-backend/internal/auth"
 )
 
-// ErrorEnvelope for auth errors
 type ErrorEnvelope struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	TraceID string `json:"trace_id"`
 }
 
-// respondAuthError is a helper to respond with auth errors in the standard envelope format
 func respondAuthError(c *gin.Context, message string) {
 	c.Header("Content-Type", "application/json; charset=utf-8")
+<<<<<<< HEAD
 
+=======
+>>>>>>> upstream/main
 	traceID := c.GetString("traceID")
 	if traceID == "" {
 		traceID = uuid.New().String()
 	}
 
+<<<<<<< HEAD
 	c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 		"error":    message,
 		"code":     "UNAUTHORIZED",
@@ -110,6 +114,36 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 			c.Set("tenantID", tenantID)
 		}
 		c.Next()
+=======
+	envelope := ErrorEnvelope{
+		Code:    "UNAUTHORIZED",
+		Message: message,
+		TraceID: traceID,
 	}
+	c.AbortWithStatusJSON(http.StatusUnauthorized, envelope)
+}
+
+// AuthMiddleware creates a Gin middleware for JWT authentication with hardened settings.
+// It supports both JWKS (asynchronous key rotation) and static secrets (HS256).
+func AuthMiddleware(jwksCache *auth.JWKSCache, staticSecret string) gin.HandlerFunc {
+	// Initialize hardened config
+	cfg := auth.Config{
+		Secret:    []byte(staticSecret),
+		Issuer:    os.Getenv("JWT_ISSUER"),   // Should be configured
+		Audience:  os.Getenv("JWT_AUDIENCE"), // Should be configured
+		Algorithm: "HS256",                   // Explicit algorithm
+		JWKS:      jwksCache,
+>>>>>>> upstream/main
+	}
+
+	// Use dev defaults if not provided (not for production)
+	if cfg.Issuer == "" {
+		cfg.Issuer = "stellabill"
+	}
+	if cfg.Audience == "" {
+		cfg.Audience = "api-clients"
+	}
+
+	return auth.GinJWTMiddleware(cfg)
 }
 

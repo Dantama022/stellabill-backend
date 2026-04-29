@@ -5,7 +5,13 @@ import (
 	"fmt"
 	"log"
 
+<<<<<<< HEAD
 	"stellabill-backend/internal/config"
+=======
+	"stellarbill-backend/internal/config"
+	"stellarbill-backend/internal/logger"
+	"stellarbill-backend/internal/security"
+>>>>>>> upstream/main
 )
 
 // Manager handles the outbox system lifecycle
@@ -16,20 +22,23 @@ type Manager struct {
 
 // NewManager creates a new outbox manager
 func NewManager(db *sql.DB, cfg config.Config) (*Manager, error) {
-	// Convert config to outbox service config
+	// Convert config to outbox service config.
+	// The current app config does not expose an Outbox section, so use dispatcher defaults.
+	dispatcherDefaults := DefaultDispatcherConfig()
 	serviceConfig := ServiceConfig{
 		DispatcherConfig: DispatcherConfig{
-			PollInterval:       cfg.Outbox.GetPollInterval(),
-			BatchSize:          cfg.Outbox.BatchSize,
-			MaxRetries:         cfg.Outbox.MaxRetries,
-			RetryBackoffFactor: cfg.Outbox.RetryBackoffFactor,
-			CleanupInterval:    cfg.Outbox.GetCleanupInterval(),
-			CompletedEventTTL:  cfg.Outbox.GetCompletedEventTTL(),
-			ProcessingTimeout:  cfg.Outbox.GetProcessingTimeout(),
+			PollInterval:       dispatcherDefaults.PollInterval,
+			BatchSize:          dispatcherDefaults.BatchSize,
+			MaxRetries:         dispatcherDefaults.MaxRetries,
+			RetryBackoffFactor: dispatcherDefaults.RetryBackoffFactor,
+			CleanupInterval:    dispatcherDefaults.CleanupInterval,
+			CompletedEventTTL:  dispatcherDefaults.CompletedEventTTL,
+			ProcessingTimeout:  dispatcherDefaults.ProcessingTimeout,
 		},
-		PublisherType: cfg.Outbox.PublisherType,
-		HTTPEndpoint:  cfg.Outbox.HTTPEndpoint,
+		PublisherType: "console",
+		HTTPEndpoint:  "",
 	}
+	_ = cfg
 
 	service, err := NewService(db, serviceConfig)
 	if err != nil {
@@ -44,8 +53,13 @@ func NewManager(db *sql.DB, cfg config.Config) (*Manager, error) {
 
 // Start starts the outbox system
 func (m *Manager) Start() error {
+<<<<<<< HEAD
 	log.Println("Starting outbox manager...")
 
+=======
+	logger.SafePrintf("Starting outbox manager...")
+	
+>>>>>>> upstream/main
 	// Run database migrations
 	if err := m.runMigrations(); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
@@ -55,13 +69,19 @@ func (m *Manager) Start() error {
 	if err := m.service.Start(); err != nil {
 		return fmt.Errorf("failed to start outbox service: %w", err)
 	}
+<<<<<<< HEAD
 
 	log.Println("Outbox manager started successfully")
+=======
+	
+	logger.SafePrintf("Outbox manager started successfully")
+>>>>>>> upstream/main
 	return nil
 }
 
 // Stop stops the outbox system
 func (m *Manager) Stop() error {
+<<<<<<< HEAD
 	log.Println("Stopping outbox manager...")
 
 	if err := m.service.Stop(); err != nil {
@@ -69,6 +89,15 @@ func (m *Manager) Stop() error {
 	}
 
 	log.Println("Outbox manager stopped")
+=======
+	logger.SafePrintf("Stopping outbox manager...")
+	
+	if err := m.service.Stop(); err != nil {
+		return fmt.Errorf("failed to stop outbox service: %w", err)
+	}
+	
+	logger.SafePrintf("Outbox manager stopped")
+>>>>>>> upstream/main
 	return nil
 }
 
@@ -89,8 +118,13 @@ func (m *Manager) Health() error {
 
 // runMigrations runs the necessary database migrations
 func (m *Manager) runMigrations() error {
+<<<<<<< HEAD
 	log.Println("Running outbox migrations...")
 
+=======
+	logger.SafePrintf("Running outbox migrations...")
+	
+>>>>>>> upstream/main
 	// Check if outbox table exists
 	var exists bool
 	err := m.db.QueryRow(`
@@ -105,7 +139,7 @@ func (m *Manager) runMigrations() error {
 	}
 
 	if !exists {
-		log.Println("Creating outbox table...")
+		logger.SafePrintf("Creating outbox table...")
 		if err := m.createOutboxTable(); err != nil {
 			return fmt.Errorf("failed to create outbox table: %w", err)
 		}
@@ -160,8 +194,13 @@ func (m *Manager) createOutboxTable() error {
 	if err != nil {
 		return fmt.Errorf("failed to create outbox table: %w", err)
 	}
+<<<<<<< HEAD
 
 	log.Println("Outbox table created successfully")
+=======
+	
+	logger.SafePrintf("Outbox table created successfully")
+>>>>>>> upstream/main
 	return nil
 }
 

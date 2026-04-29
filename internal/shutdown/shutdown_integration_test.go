@@ -278,3 +278,30 @@ func TestGracefulShutdown_Integration_CallbackWithContext(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
+=======
+func TestShutdown_AuditAndOutboxExecuted(t *testing.T) {
+	server := &http.Server{}
+	gs := NewGracefulShutdown(server, 3*time.Second, 2*time.Second)
+
+	auditCalled := false
+	outboxCalled := false
+
+	gs.RegisterAuditFlush(func(ctx context.Context) error {
+		auditCalled = true
+		return nil
+	})
+
+	gs.RegisterOutboxFlush(func(ctx context.Context) error {
+		outboxCalled = true
+		return nil
+	})
+
+	go gs.Shutdown()
+	gs.Wait()
+
+	if !auditCalled || !outboxCalled {
+		t.Fatal("audit/outbox not executed during shutdown")
+	}
+}
+>>>>>>> upstream/main

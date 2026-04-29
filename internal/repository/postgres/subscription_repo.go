@@ -8,13 +8,21 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+<<<<<<< HEAD
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"stellabill-backend/internal/repository"
+=======
+	"stellarbill-backend/internal/repository"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+>>>>>>> upstream/main
 )
 
-var tracer = otel.Tracer("repository/postgres")
+var subscriptionTracer = otel.Tracer("repository/postgres/subscription")
 
 // SubscriptionRepo implements repository.SubscriptionRepository against a live Postgres database.
 type SubscriptionRepo struct {
@@ -52,10 +60,17 @@ func (r *SubscriptionRepo) FindByID(ctx context.Context, id string) (*repository
 		}
 		return nil, err
 	}
-	s.DeletedAt = deletedAt
+	s.DeletedAt = timeutil.NormalizePtrUTC(deletedAt)
+
+	normalizedNextBilling, err := timeutil.NormalizeRFC3339StringToUTC(s.NextBilling)
+	if err == nil {
+		s.NextBilling = normalizedNextBilling
+	}
+
 	return &s, nil
 }
 
+<<<<<<< HEAD
 // FindByIDAndTenant fetches the subscription with the given ID.
 // For now, tenant is ignored as the table does not have tenant column.
 // Returns repository.ErrNotFound if no row exists.
@@ -63,3 +78,16 @@ func (r *SubscriptionRepo) FindByIDAndTenant(ctx context.Context, id string, ten
 	return r.FindByID(ctx, id)
 }
 
+=======
+// FindByIDAndTenant fetches a subscription by id and returns not found when tenant does not match.
+func (r *SubscriptionRepo) FindByIDAndTenant(ctx context.Context, id string, tenantID string) (*repository.SubscriptionRow, error) {
+	s, err := r.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Current schema does not persist tenant for subscriptions; keep caller-provided tenant for service checks.
+	s.TenantID = tenantID
+	return s, nil
+}
+>>>>>>> upstream/main

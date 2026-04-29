@@ -140,3 +140,15 @@ func FindByVersion(migs []Migration, version int64) (Migration, bool) {
 	return Migration{}, false
 }
 
+<<<<<<< HEAD
+=======
+func ValidateSequence(migs []Migration) error {
+	for i, m := range migs {
+		expectedVersion := int64(i + 1)
+		if m.Version != expectedVersion {
+			return fmt.Errorf("migration sequence error: expected version %d, got %d for migration '%s'", expectedVersion, m.Version, m.Name)
+		}
+	}
+	return nil
+}
+>>>>>>> upstream/main

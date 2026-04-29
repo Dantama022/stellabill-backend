@@ -1,12 +1,23 @@
 package reconciliation
 
 import (
+<<<<<<< HEAD
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+=======
+    "context"
+    "encoding/json"
+    "net/http"
+    "net/http/httptest"
+    "testing"
+    "time"
+
+    "go.uber.org/zap"
+>>>>>>> upstream/main
 )
 
 func TestHTTPAdapter_FetchSnapshots(t *testing.T) {
@@ -29,6 +40,7 @@ func TestHTTPAdapter_FetchSnapshots(t *testing.T) {
 	}))
 	defer srv.Close()
 
+<<<<<<< HEAD
 	adapter := NewHTTPAdapter(srv.URL, "")
 	got, err := adapter.FetchSnapshots(context.Background())
 	if err != nil {
@@ -37,5 +49,15 @@ func TestHTTPAdapter_FetchSnapshots(t *testing.T) {
 	if len(got) != 1 || got[0].SubscriptionID != "sub-http-1" {
 		t.Fatalf("unexpected snapshots: %#v", got)
 	}
+=======
+    adapter := NewHTTPAdapter(srv.URL, "", zap.NewNop())
+    got, err := adapter.FetchSnapshots(context.Background())
+    if err != nil {
+        t.Fatalf("FetchSnapshots error: %v", err)
+    }
+    if len(got) != 1 || got[0].SubscriptionID != "sub-http-1" {
+        t.Fatalf("unexpected snapshots: %#v", got)
+    }
+>>>>>>> upstream/main
 }
 

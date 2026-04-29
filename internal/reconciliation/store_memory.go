@@ -28,5 +28,51 @@ func (m *MemoryStore) ListReports() ([]Report, error) {
 	out := make([]Report, len(m.reports))
 	copy(out, m.reports)
 	return out, nil
+<<<<<<< HEAD
+=======
+}
+
+// ListReportsByTenant returns reports scoped to a specific tenant.
+func (m *MemoryStore) ListReportsByTenant(tenantID string) ([]Report, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var out []Report
+	for _, r := range m.reports {
+		if r.TenantID == tenantID {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+// DeleteReportsByJobID removes all reports associated with a job ID.
+func (m *MemoryStore) DeleteReportsByJobID(jobID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	filtered := make([]Report, 0)
+	for _, report := range m.reports {
+		if report.JobID != jobID {
+			filtered = append(filtered, report)
+		}
+	}
+	m.reports = filtered
+	return nil
+}
+
+// GetReportsByJobID returns all reports associated with a job ID.
+func (m *MemoryStore) GetReportsByJobID(jobID string) ([]Report, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	var reports []Report
+	for _, report := range m.reports {
+		if report.JobID == jobID {
+			reports = append(reports, report)
+		}
+	}
+	return reports, nil
+>>>>>>> upstream/main
 }
 

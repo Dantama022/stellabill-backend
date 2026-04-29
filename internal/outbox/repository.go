@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"stellarbill-backend/internal/timeutil"
+
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
@@ -22,6 +24,11 @@ func NewPostgresRepository(db *sql.DB) Repository {
 
 // Store stores a new outbox event
 func (r *postgresRepository) Store(event *Event) error {
+	event.OccurredAt = timeutil.NormalizeUTC(event.OccurredAt)
+	event.CreatedAt = timeutil.NormalizeUTC(event.CreatedAt)
+	event.UpdatedAt = timeutil.NormalizeUTC(event.UpdatedAt)
+	event.NextRetryAt = timeutil.NormalizePtrUTC(event.NextRetryAt)
+
 	query := `
 		INSERT INTO outbox_events (
 			id, event_type, event_data, aggregate_id, aggregate_type,
@@ -66,7 +73,11 @@ func (r *postgresRepository) GetPendingEvents(limit int) ([]*Event, error) {
 		LIMIT $4
 	`
 
+<<<<<<< HEAD
 	rows, err := r.db.Query(query, StatusPending, StatusFailed, time.Now(), limit)
+=======
+	rows, err := r.db.Query(query, StatusPending, StatusFailed, timeutil.NowUTC(), limit)
+>>>>>>> upstream/main
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pending events: %w", err)
 	}
@@ -110,7 +121,11 @@ func (r *postgresRepository) UpdateStatus(id uuid.UUID, status Status, errorMess
 		WHERE id = $4
 	`
 
+<<<<<<< HEAD
 	_, err := r.db.Exec(query, status, errorMessage, time.Now(), id)
+=======
+	_, err := r.db.Exec(query, status, errorMessage, timeutil.NowUTC(), id)
+>>>>>>> upstream/main
 	if err != nil {
 		return fmt.Errorf("failed to update event status: %w", err)
 	}
@@ -126,7 +141,11 @@ func (r *postgresRepository) MarkAsProcessing(id uuid.UUID) error {
 		WHERE id = $3 AND status = $4
 	`
 
+<<<<<<< HEAD
 	result, err := r.db.Exec(query, StatusProcessing, time.Now(), id, StatusPending)
+=======
+	result, err := r.db.Exec(query, StatusProcessing, timeutil.NowUTC(), id, StatusPending)
+>>>>>>> upstream/main
 	if err != nil {
 		return fmt.Errorf("failed to mark event as processing: %w", err)
 	}
@@ -155,7 +174,12 @@ func (r *postgresRepository) IncrementRetryCount(id uuid.UUID, nextRetryAt time.
 		WHERE id = $5
 	`
 
+<<<<<<< HEAD
 	_, err := r.db.Exec(query, nextRetryAt, StatusFailed, errorMessage, time.Now(), id)
+=======
+	nextRetryAt = timeutil.NormalizeUTC(nextRetryAt)
+	_, err := r.db.Exec(query, nextRetryAt, StatusFailed, errorMessage, timeutil.NowUTC(), id)
+>>>>>>> upstream/main
 	if err != nil {
 		return fmt.Errorf("failed to increment retry count: %w", err)
 	}
@@ -181,7 +205,12 @@ func (r *postgresRepository) DeleteCompletedEvents(olderThan time.Time) (int64, 
 // scanEvent scans a database row into an Event struct
 func (r *postgresRepository) scanEvent(scanner interface{ Scan(...interface{}) error }) (*Event, error) {
 	var event Event
+<<<<<<< HEAD
 	var aggregateID, aggregateType, nextRetryAt, errorMessage sql.NullString
+=======
+	var aggregateID, aggregateType, errorMessage sql.NullString
+	var nextRetryAt sql.NullTime
+>>>>>>> upstream/main
 
 	err := scanner.Scan(
 		&event.ID,
@@ -213,24 +242,37 @@ func (r *postgresRepository) scanEvent(scanner interface{ Scan(...interface{}) e
 	}
 
 	if nextRetryAt.Valid {
+<<<<<<< HEAD
 		if t, err := time.Parse(time.RFC3339, nextRetryAt.String); err == nil {
 			event.NextRetryAt = &t
 		}
+=======
+		event.NextRetryAt = timeutil.NormalizePtrUTC(&nextRetryAt.Time)
+>>>>>>> upstream/main
 	}
 
 	if errorMessage.Valid {
 		event.ErrorMessage = &errorMessage.String
 	}
 
+<<<<<<< HEAD
+=======
+	event.OccurredAt = timeutil.NormalizeUTC(event.OccurredAt)
+	event.CreatedAt = timeutil.NormalizeUTC(event.CreatedAt)
+	event.UpdatedAt = timeutil.NormalizeUTC(event.UpdatedAt)
+
+>>>>>>> upstream/main
 	return &event, nil
 }
 
 // NewEvent creates a new outbox event
 func NewEvent(eventType string, data interface{}, aggregateID, aggregateType *string) (*Event, error) {
+	now := timeutil.NowUTC()
+
 	eventData := EventData{
 		Type:      eventType,
 		Data:      data,
-		Timestamp: time.Now(),
+		Timestamp: now,
 		ID:        uuid.New().String(),
 	}
 
@@ -245,12 +287,12 @@ func NewEvent(eventType string, data interface{}, aggregateID, aggregateType *st
 		EventData:     json.RawMessage(jsonData),
 		AggregateID:   aggregateID,
 		AggregateType: aggregateType,
-		OccurredAt:    time.Now(),
+		OccurredAt:    now,
 		Status:        StatusPending,
 		RetryCount:    0,
 		MaxRetries:    3,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		CreatedAt:     now,
+		UpdatedAt:     now,
 		Version:       1,
 	}, nil
 }

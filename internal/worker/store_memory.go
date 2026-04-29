@@ -5,6 +5,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"stellarbill-backend/internal/timeutil"
 )
 
 var (
@@ -154,7 +156,7 @@ func (s *MemoryStore) AcquireLock(jobID string, workerID string, ttl time.Durati
 
 	// Clean up expired locks
 	if lock, exists := s.locks[jobID]; exists {
-		if time.Now().After(lock.expiresAt) {
+		if timeutil.NowUTC().After(lock.expiresAt) {
 			delete(s.locks, jobID)
 		} else if lock.workerID != workerID {
 			return false, nil
@@ -164,7 +166,7 @@ func (s *MemoryStore) AcquireLock(jobID string, workerID string, ttl time.Durati
 	// Acquire or renew lock
 	s.locks[jobID] = &lockInfo{
 		workerID:  workerID,
-		expiresAt: time.Now().Add(ttl),
+		expiresAt: timeutil.NowUTC().Add(ttl),
 	}
 	return true, nil
 }
@@ -186,3 +188,40 @@ func (s *MemoryStore) ReleaseLock(jobID string, workerID string) error {
 	return nil
 }
 
+<<<<<<< HEAD
+=======
+func (s *MemoryStore) QueueDepth() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	count := 0
+	now := time.Now()
+
+	for _, job := range s.jobs {
+		if job.Status == JobStatusPending && !job.ScheduledAt.After(now) {
+			count++
+		}
+	}
+
+	return count
+}
+
+func (s *MemoryStore) OldestPending() *Job {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var oldest *Job
+	now := time.Now()
+
+	for _, job := range s.jobs {
+		if job.Status == JobStatusPending && !job.ScheduledAt.After(now) {
+			if oldest == nil || job.CreatedAt.Before(oldest.CreatedAt) {
+				copy := *job
+				oldest = &copy
+			}
+		}
+	}
+
+	return oldest
+}
+>>>>>>> upstream/main

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"stellarbill-backend/internal/timeutil"
+
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
@@ -54,7 +56,11 @@ func (r *postgresPlanRepository) Create(plan *Plan) error {
 		RETURNING id
 	`
 
+<<<<<<< HEAD
 	now := time.Now()
+=======
+	now := timeutil.NowUTC()
+>>>>>>> upstream/main
 	plan.CreatedAt = now
 	plan.UpdatedAt = now
 
@@ -111,6 +117,12 @@ func (r *postgresPlanRepository) GetByID(id string) (*Plan, error) {
 		plan.Description = &description.String
 	}
 
+<<<<<<< HEAD
+=======
+	plan.CreatedAt = timeutil.NormalizeUTC(plan.CreatedAt)
+	plan.UpdatedAt = timeutil.NormalizeUTC(plan.UpdatedAt)
+
+>>>>>>> upstream/main
 	return &plan, nil
 }
 
@@ -154,7 +166,11 @@ func (r *postgresPlanRepository) Update(plan *Plan) error {
 		WHERE id = $7
 	`
 
+<<<<<<< HEAD
 	plan.UpdatedAt = time.Now()
+=======
+	plan.UpdatedAt = timeutil.NowUTC()
+>>>>>>> upstream/main
 
 	result, err := r.db.Exec(query,
 		plan.Name,
@@ -259,6 +275,12 @@ func (r *postgresPlanRepository) scanPlan(scanner interface{ Scan(...interface{}
 		plan.Description = &description.String
 	}
 
+<<<<<<< HEAD
+=======
+	plan.CreatedAt = timeutil.NormalizeUTC(plan.CreatedAt)
+	plan.UpdatedAt = timeutil.NormalizeUTC(plan.UpdatedAt)
+
+>>>>>>> upstream/main
 	return &plan, nil
 }
 

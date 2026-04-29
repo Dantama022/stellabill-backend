@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"stellarbill-backend/internal/timeutil"
+
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
@@ -69,7 +71,18 @@ func (r *postgresSubscriptionRepository) Create(subscription *Subscription) erro
 		RETURNING id
 	`
 
+<<<<<<< HEAD
 	now := time.Now()
+=======
+	subscription.CurrentPeriodStart = timeutil.NormalizeUTC(subscription.CurrentPeriodStart)
+	subscription.CurrentPeriodEnd = timeutil.NormalizeUTC(subscription.CurrentPeriodEnd)
+	subscription.CanceledAt = timeutil.NormalizePtrUTC(subscription.CanceledAt)
+	subscription.EndedAt = timeutil.NormalizePtrUTC(subscription.EndedAt)
+	subscription.TrialStart = timeutil.NormalizePtrUTC(subscription.TrialStart)
+	subscription.TrialEnd = timeutil.NormalizePtrUTC(subscription.TrialEnd)
+
+	now := timeutil.NowUTC()
+>>>>>>> upstream/main
 	subscription.CreatedAt = now
 	subscription.UpdatedAt = now
 
@@ -141,21 +154,29 @@ func (r *postgresSubscriptionRepository) GetByID(id string) (*Subscription, erro
 	}
 
 	if canceledAt.Valid {
-		subscription.CanceledAt = &canceledAt.Time
+		subscription.CanceledAt = timeutil.NormalizePtrUTC(&canceledAt.Time)
 	}
 
 	if endedAt.Valid {
-		subscription.EndedAt = &endedAt.Time
+		subscription.EndedAt = timeutil.NormalizePtrUTC(&endedAt.Time)
 	}
 
 	if trialStart.Valid {
-		subscription.TrialStart = &trialStart.Time
+		subscription.TrialStart = timeutil.NormalizePtrUTC(&trialStart.Time)
 	}
 
 	if trialEnd.Valid {
-		subscription.TrialEnd = &trialEnd.Time
+		subscription.TrialEnd = timeutil.NormalizePtrUTC(&trialEnd.Time)
 	}
 
+<<<<<<< HEAD
+=======
+	subscription.CurrentPeriodStart = timeutil.NormalizeUTC(subscription.CurrentPeriodStart)
+	subscription.CurrentPeriodEnd = timeutil.NormalizeUTC(subscription.CurrentPeriodEnd)
+	subscription.CreatedAt = timeutil.NormalizeUTC(subscription.CreatedAt)
+	subscription.UpdatedAt = timeutil.NormalizeUTC(subscription.UpdatedAt)
+
+>>>>>>> upstream/main
 	return &subscription, nil
 }
 
@@ -271,7 +292,17 @@ func (r *postgresSubscriptionRepository) Update(subscription *Subscription) erro
 		WHERE id = $10
 	`
 
+<<<<<<< HEAD
 	subscription.UpdatedAt = time.Now()
+=======
+	subscription.CurrentPeriodStart = timeutil.NormalizeUTC(subscription.CurrentPeriodStart)
+	subscription.CurrentPeriodEnd = timeutil.NormalizeUTC(subscription.CurrentPeriodEnd)
+	subscription.CanceledAt = timeutil.NormalizePtrUTC(subscription.CanceledAt)
+	subscription.EndedAt = timeutil.NormalizePtrUTC(subscription.EndedAt)
+	subscription.TrialStart = timeutil.NormalizePtrUTC(subscription.TrialStart)
+	subscription.TrialEnd = timeutil.NormalizePtrUTC(subscription.TrialEnd)
+	subscription.UpdatedAt = timeutil.NowUTC()
+>>>>>>> upstream/main
 
 	result, err := r.db.Exec(query,
 		subscription.Status,
@@ -310,7 +341,11 @@ func (r *postgresSubscriptionRepository) UpdateStatus(id string, status string) 
 		WHERE id = $3
 	`
 
+<<<<<<< HEAD
 	result, err := r.db.Exec(query, status, time.Now(), id)
+=======
+	result, err := r.db.Exec(query, status, timeutil.NowUTC(), id)
+>>>>>>> upstream/main
 	if err != nil {
 		return fmt.Errorf("failed to update subscription status: %w", err)
 	}
@@ -335,9 +370,15 @@ func (r *postgresSubscriptionRepository) Cancel(id string, cancelAtPeriodEnd boo
 		WHERE id = $4
 	`
 
+<<<<<<< HEAD
 	now := time.Now()
 
 	result, err := r.db.Exec(query, cancelAtPeriodEnd, &now, time.Now(), id)
+=======
+	now := timeutil.NowUTC()
+
+	result, err := r.db.Exec(query, cancelAtPeriodEnd, &now, now, id)
+>>>>>>> upstream/main
 	if err != nil {
 		return fmt.Errorf("failed to cancel subscription: %w", err)
 	}
@@ -401,7 +442,11 @@ func (r *postgresSubscriptionRepository) GetSubscriptionsDueForBilling(limit int
 		LIMIT $2
 	`
 
+<<<<<<< HEAD
 	rows, err := r.db.Query(query, time.Now(), limit)
+=======
+	rows, err := r.db.Query(query, timeutil.NowUTC(), limit)
+>>>>>>> upstream/main
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subscriptions due for billing: %w", err)
 	}
@@ -453,21 +498,29 @@ func (r *postgresSubscriptionRepository) scanSubscription(scanner interface{ Sca
 	}
 
 	if canceledAt.Valid {
-		subscription.CanceledAt = &canceledAt.Time
+		subscription.CanceledAt = timeutil.NormalizePtrUTC(&canceledAt.Time)
 	}
 
 	if endedAt.Valid {
-		subscription.EndedAt = &endedAt.Time
+		subscription.EndedAt = timeutil.NormalizePtrUTC(&endedAt.Time)
 	}
 
 	if trialStart.Valid {
-		subscription.TrialStart = &trialStart.Time
+		subscription.TrialStart = timeutil.NormalizePtrUTC(&trialStart.Time)
 	}
 
 	if trialEnd.Valid {
-		subscription.TrialEnd = &trialEnd.Time
+		subscription.TrialEnd = timeutil.NormalizePtrUTC(&trialEnd.Time)
 	}
 
+<<<<<<< HEAD
+=======
+	subscription.CurrentPeriodStart = timeutil.NormalizeUTC(subscription.CurrentPeriodStart)
+	subscription.CurrentPeriodEnd = timeutil.NormalizeUTC(subscription.CurrentPeriodEnd)
+	subscription.CreatedAt = timeutil.NormalizeUTC(subscription.CreatedAt)
+	subscription.UpdatedAt = timeutil.NormalizeUTC(subscription.UpdatedAt)
+
+>>>>>>> upstream/main
 	return &subscription, nil
 }
 

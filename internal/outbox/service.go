@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"time"
 
+	"stellarbill-backend/internal/security"
+
 	"github.com/google/uuid"
+	"stellarbill-backend/internal/structuredlog"
 )
 
 // Service provides the main outbox functionality
@@ -65,8 +67,15 @@ func (s *Service) PublishEvent(ctx context.Context, eventType string, data inter
 	if err := s.storeEventInTransaction(ctx, event); err != nil {
 		return fmt.Errorf("failed to store event: %w", err)
 	}
+<<<<<<< HEAD
 
 	log.Printf("Event %s stored in outbox: %s", event.ID, eventType)
+=======
+	
+	log.Printf("Event %s stored in outbox: %s", 
+		security.MaskPII(event.ID), 
+		security.MaskPII(eventType))
+>>>>>>> upstream/main
 	return nil
 }
 
@@ -182,11 +191,19 @@ type DomainEvent interface {
 
 // SubscriptionCreated represents a subscription created event
 type SubscriptionCreated struct {
+<<<<<<< HEAD
 	ID         string    `json:"id"`
 	CustomerID string    `json:"customer_id"`
 	PlanID     string    `json:"plan_id"`
 	Status     string    `json:"status"`
 	OccurredAt time.Time `json:"occurred_at"`
+=======
+	ID           string    `json:"id"`
+	CustomerID   string    `json:"customer_id"`
+	PlanID       string    `json:"plan_id"`
+	Status       string    `json:"status"`
+	OccurredAtAt time.Time `json:"occurred_at"`
+>>>>>>> upstream/main
 }
 
 func (e SubscriptionCreated) EventType() string {
@@ -206,18 +223,32 @@ func (e SubscriptionCreated) AggregateType() *string {
 	return &aggregateType
 }
 
+<<<<<<< HEAD
 func (e SubscriptionCreated) GetOccurredAt() time.Time {
 	return e.OccurredAt
+=======
+func (e SubscriptionCreated) OccurredAt() time.Time {
+	return e.OccurredAtAt
+>>>>>>> upstream/main
 }
 
 // PaymentProcessed represents a payment processed event
 type PaymentProcessed struct {
+<<<<<<< HEAD
 	ID             string    `json:"id"`
 	SubscriptionID string    `json:"subscription_id"`
 	Amount         float64   `json:"amount"`
 	Currency       string    `json:"currency"`
 	Status         string    `json:"status"`
 	OccurredAt     time.Time `json:"occurred_at"`
+=======
+	ID           string    `json:"id"`
+	SubscriptionID string   `json:"subscription_id"`
+	Amount       float64   `json:"amount"`
+	Currency     string    `json:"currency"`
+	Status       string    `json:"status"`
+	OccurredAtAt time.Time `json:"occurred_at"`
+>>>>>>> upstream/main
 }
 
 func (e PaymentProcessed) EventType() string {
@@ -237,7 +268,12 @@ func (e PaymentProcessed) AggregateType() *string {
 	return &aggregateType
 }
 
+<<<<<<< HEAD
 func (e PaymentProcessed) GetOccurredAt() time.Time {
 	return e.OccurredAt
+=======
+func (e PaymentProcessed) OccurredAt() time.Time {
+	return e.OccurredAtAt
+>>>>>>> upstream/main
 }
 
